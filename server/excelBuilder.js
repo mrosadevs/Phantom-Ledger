@@ -14,8 +14,9 @@ async function buildWorkbookBuffer(rows) {
   ];
 
   for (const row of rows) {
+    const parsedDate = parseUsDate(row.date);
     worksheet.addRow({
-      date: row.date,
+      date: parsedDate || row.date,
       clean: row.clean,
       amount: Number.isFinite(row.amount) ? row.amount : row.amountRaw,
       original: row.original
@@ -23,7 +24,8 @@ async function buildWorkbookBuffer(rows) {
   }
 
   worksheet.autoFilter = { from: "A1", to: "D1" };
-  worksheet.getColumn(3).numFmt = "#,##0.00;-#,##0.00";
+  worksheet.getColumn(1).numFmt = "m/d/yyyy";
+  worksheet.getColumn(3).numFmt = "0.##;-0.##";
 
   worksheet.eachRow((excelRow, rowNumber) => {
     excelRow.font = {
@@ -40,6 +42,32 @@ async function buildWorkbookBuffer(rows) {
   autosizeColumns(worksheet, 4);
 
   return workbook.xlsx.writeBuffer();
+}
+
+function parseUsDate(input) {
+  const match = String(input || "").trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!match) {
+    return null;
+  }
+
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  const year = Number(match[3]);
+  if (!Number.isInteger(month) || !Number.isInteger(day) || !Number.isInteger(year)) {
+    return null;
+  }
+
+  const parsed = new Date(year, month - 1, day);
+  if (
+    Number.isNaN(parsed.getTime())
+    || parsed.getFullYear() !== year
+    || parsed.getMonth() !== month - 1
+    || parsed.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return parsed;
 }
 
 function autosizeColumns(worksheet, count) {
