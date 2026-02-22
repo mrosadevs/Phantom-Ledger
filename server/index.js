@@ -109,6 +109,7 @@ app.post("/process", upload.array("pdfs"), async (req, res) => {
     totalTransactions: cleanedRows.length,
     dateRange: buildDateRange(cleanedRows)
   };
+  const downloadFileName = deriveDownloadFileName(parsedFileSummaries, files);
 
   if (!cleanedRows.length) {
     return res.status(422).json({
@@ -124,7 +125,7 @@ app.post("/process", upload.array("pdfs"), async (req, res) => {
     "Content-Type",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
   );
-  res.setHeader("Content-Disposition", 'attachment; filename="accuracy-phantom-ledger.xlsx"');
+  res.setHeader("Content-Disposition", `attachment; filename="${downloadFileName}"`);
   setEncodedHeader(res, "X-Phantom-Summary", summary);
   setEncodedHeader(res, "X-Phantom-Warnings", accountMismatchWarnings);
   setEncodedHeader(res, "X-Phantom-Preview", buildPreviewTransactions(cleanedRows, 30));
@@ -420,4 +421,56 @@ function pickMajorityCountKey(countMap) {
   }
 
   return selectedKey;
+}
+
+function deriveDownloadFileName(parsedFiles, uploadedFiles) {
+  const nameCounts = new Map();
+
+  for (const file of parsedFiles || []) {
+    const primary = normalizeDisplayName(file?.metadata?.primaryBusinessName);
+    if (primary) {
+      nameCounts.set(primary, (nameCounts.get(primary) || 0) + 3);
+    }
+
+    for (const candidate of file?.metadata?.businessNameCandidates || []) {
+      const normalized = normalizeDisplayName(candidate);
+      if (normalized) {
+        nameCounts.set(normalized, (nameCounts.get(normalized) || 0) + 1);
+      }
+    }
+  }
+
+  const pickedName = pickMajorityCountKey(nameCounts);
+  if (pickedName) {
+    return `${toSafeFileName(pickedName)}.xlsx`;
+  }
+
+  if ((uploadedFiles || []).length === 1) {
+    const base = path.parse(uploadedFiles[0].originalname || "").name;
+    const normalized = toSafeFileName(normalizeDisplayName(base) || base);
+    if (normalized) {
+      return `${normalized}.xlsx`;
+    }
+  }
+
+  return "accuracy-phantom-ledger.xlsx";
+}
+
+function normalizeDisplayName(value) {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.replace(/\s+(statement|monthly summary|account summary).*$/i, "").trim();
+}
+
+function toSafeFileName(value) {
+  const safe = String(value || "")
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[. ]+$/g, "");
+
+  return safe || "accuracy-phantom-ledger";
 }

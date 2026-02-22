@@ -121,6 +121,67 @@ body::after {
   font-size: 1rem;
 }
 
+.update-card {
+  position: relative;
+  background:
+    radial-gradient(circle at 86% 20%, rgba(123, 190, 255, 0.18), transparent 45%),
+    linear-gradient(150deg, rgba(17, 42, 110, 0.92), rgba(9, 25, 76, 0.96));
+  border: 1px solid rgba(131, 192, 255, 0.35);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: var(--shadow-lg);
+  animation: update-pop 360ms var(--ease) both;
+}
+
+.update-card h2 {
+  margin: 8px 0 8px;
+  font-size: 1.1rem;
+  color: #eff5ff;
+}
+
+.update-card ul {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  color: #c4dafb;
+  font-size: 0.9rem;
+}
+
+.update-card li {
+  line-height: 1.4;
+}
+
+.update-card .button-secondary {
+  padding: 7px 12px;
+}
+
+.update-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.update-pill {
+  margin: 0;
+  border: 1px solid rgba(142, 208, 255, 0.45);
+  border-radius: 999px;
+  padding: 2px 9px;
+  color: #dff1ff;
+  background: rgba(59, 136, 236, 0.25);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.update-date {
+  margin: 0;
+  color: #9fbbdf;
+  font-size: 0.83rem;
+}
+
 .panel {
   position: relative;
   background: var(--panel-bg);
@@ -551,6 +612,10 @@ body::after {
   .summary-grid {
     grid-template-columns: 1fr;
   }
+
+  .update-card h2 {
+    font-size: 1rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -637,5 +702,16 @@ body::after {
   to {
     opacity: 0;
     transform: translateX(52%) skewX(-16deg);
+  }
+}
+
+@keyframes update-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }

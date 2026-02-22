@@ -6,6 +6,18 @@ import "./styles.css";
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const REMOVE_ANIMATION_MS = 220;
 const COMPLETION_PULSE_MS = 1400;
+const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
+const UPDATE_CARD = {
+  id: "2026-02-22-cleaning-and-filename",
+  label: "Update",
+  date: "Feb 22, 2026",
+  title: "Cleaner transaction names + statement-based Excel filename",
+  items: [
+    "Memo cleaning now follows your manual DocuClipper style for wire/deposit/card patterns.",
+    "Downloaded Excel uses the business/person name from statement metadata when available.",
+    "Date and amount export formatting was adjusted for plain values."
+  ]
+};
 
 function fileKey(file) {
   return `${file.name}::${file.size}::${file.lastModified}`;
@@ -70,6 +82,7 @@ export default function App() {
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState(null);
   const [isCompletionPulseActive, setIsCompletionPulseActive] = useState(false);
+  const [isUpdateVisible, setIsUpdateVisible] = useState(false);
 
   const progressIntervalRef = useRef(null);
   const completionPulseTimeoutRef = useRef(null);
@@ -117,6 +130,24 @@ export default function App() {
       clearTimeout(completionPulseTimeoutRef.current);
     }
   }, []);
+
+  useEffect(() => {
+    try {
+      const seenUpdateId = localStorage.getItem(UPDATE_STORAGE_KEY);
+      setIsUpdateVisible(seenUpdateId !== UPDATE_CARD.id);
+    } catch (_error) {
+      setIsUpdateVisible(true);
+    }
+  }, []);
+
+  const dismissUpdateCard = () => {
+    setIsUpdateVisible(false);
+    try {
+      localStorage.setItem(UPDATE_STORAGE_KEY, UPDATE_CARD.id);
+    } catch (_error) {
+      // localStorage may be unavailable; no-op
+    }
+  };
 
   const startProgressSimulation = () => {
     setProgress(5);
@@ -285,6 +316,24 @@ export default function App() {
         <h1>Accuracy Phantom Ledger</h1>
         <p>PDF in, transactions out. Keep the raw memo text and export a clean Excel file.</p>
       </header>
+
+      {isUpdateVisible ? (
+        <section className="update-card" aria-live="polite">
+          <div className="update-card-head">
+            <p className="update-pill">{UPDATE_CARD.label}</p>
+            <p className="update-date">{UPDATE_CARD.date}</p>
+          </div>
+          <h2>{UPDATE_CARD.title}</h2>
+          <ul>
+            {UPDATE_CARD.items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+          <button type="button" className="button-secondary" onClick={dismissUpdateCard}>
+            Close
+          </button>
+        </section>
+      ) : null}
 
       <section className="panel">
         <h2>Upload Bank Statements</h2>
