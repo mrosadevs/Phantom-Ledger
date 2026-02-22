@@ -19,6 +19,59 @@ function cleanTransaction(memo) {
 
   const m = memo.trim();
 
+  // Pattern: MISC DEPOSIT ... NAME <person/business>
+  const miscDepositName = m.match(/^MISC DEPOSIT PAY ID \S+ ORG ID \S+ NAME (.+)$/i);
+  if (miscDepositName) {
+    return miscDepositName[1].trim();
+  }
+
+  // Pattern: OTHER/WITHDRAWAL/ADJ ... NAME <person/business>
+  const adjName = m.match(/^OTHER\/WITHDRAWAL\/ADJ PAY ID \S+ ORG ID \S+ NAME (.+)$/i);
+  if (adjName) {
+    return adjName[1].trim();
+  }
+
+  // Pattern: incoming wire transfer source
+  const wireFrom = m.match(/^FUNDS TRANSFER WIRE FROM (.+?) [A-Za-z]{3} \d{1,2}$/i);
+  if (wireFrom) {
+    const wireFromName = wireFrom[1].trim();
+    if (/^\d\//.test(wireFromName) && !wireFromName.includes(",")) {
+      return wireFromName.replace(/^\d\//, "").trim();
+    }
+    return wireFromName;
+  }
+
+  // Pattern: outgoing domestic/int'l wire destination
+  const wireTo = m.match(/^(?:FUNDS TRN OUT CBOL|INT'L WIRE OUT CBOL) WIRE TO (.+?)(?:\s+#\S+)?$/i);
+  if (wireTo) {
+    return wireTo[1].replace(/\s+SA$/i, "").trim();
+  }
+
+  // Pattern: explicit incoming wire fee lines
+  if (/^SERVICE CHARGES INCOMING WIRE FEE\b/i.test(m)) {
+    return "INCOMING WIRE FEE";
+  }
+
+  if (/^SERVICE FEE CHARGES FOR (?:DOMESTIC|INTERNATIONAL) FUNDS TRANSFER$/i.test(m)) {
+    return "SERVICE FEE";
+  }
+
+  const instantPaymentDebit = m.match(/^INSTANT PAYMENT DEBIT\s+\d{12,}\S*\s+(.+)$/i);
+  if (instantPaymentDebit) {
+    return instantPaymentDebit[1].trim();
+  }
+
+  // Pattern: debit card purchase, keep merchant only
+  if (/^DEBIT CARD PURCH Card Ending in /i.test(m)) {
+    let rest = m.replace(/^DEBIT CARD PURCH Card Ending in \d+\s+\S+\s+\d+\s+[A-Za-z]{3}\s+\d{1,2}\s+/i, "");
+    rest = rest.replace(/\s+[A-Za-z]{3}\s+\d{4}\b.*$/i, "");
+    rest = rest.replace(/\s+\d{7,}.*$/i, "");
+    rest = rest.replace(/\s+[A-Z]{2}\s+\d+\s*$/i, "");
+    if (rest.trim()) {
+      return rest.trim();
+    }
+  }
+
   // RULE B8: WIRE TYPE:WIRE IN
   if (m.startsWith("WIRE TYPE:WIRE IN")) {
     const match = m.match(/ORIG:(.+?)\s+ID:/);
