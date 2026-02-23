@@ -299,7 +299,7 @@ export default function App() {
     <main className={`app-shell ${isCompletionPulseActive ? "extraction-done" : ""}`}>
       <header className="app-header">
         <div className="header-content">
-          <h1>Phantom Ledger</h1>
+          <h1>Accuracy Phantom Ledger</h1>
           <p>PDF in, transactions out. Extract and export clean Excel files.</p>
         </div>
         <div className="header-actions">
