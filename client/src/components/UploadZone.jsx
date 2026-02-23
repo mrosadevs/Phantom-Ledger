@@ -1,36 +1,33 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 function isPdf(file) {
-  if (!file) {
-    return false;
-  }
-
+  if (!file) return false;
   return file.type === "application/pdf" || /\.pdf$/i.test(file.name || "");
 }
 
-export default function UploadZone({ onFilesAdded, onInvalidFiles, disabled }) {
+export default function UploadZone({ onFilesAdded, onInvalidFiles, disabled, triggerRef }) {
   const [isDragActive, setIsDragActive] = useState(false);
   const inputRef = useRef(null);
 
   const pickFiles = (fileList) => {
-    if (disabled) {
-      return;
-    }
-
+    if (disabled) return;
     const pdfFiles = Array.from(fileList || []).filter(isPdf);
     if (!pdfFiles.length) {
       onInvalidFiles?.();
       return;
     }
-
     onFilesAdded(pdfFiles);
   };
 
   const openFileDialog = () => {
-    if (!disabled) {
-      inputRef.current?.click();
-    }
+    if (!disabled) inputRef.current?.click();
   };
+
+  useEffect(() => {
+    if (triggerRef) {
+      triggerRef.current = { open: openFileDialog };
+    }
+  });
 
   return (
     <div
@@ -38,9 +35,7 @@ export default function UploadZone({ onFilesAdded, onInvalidFiles, disabled }) {
       role="button"
       tabIndex={disabled ? -1 : 0}
       onClick={(event) => {
-        if (event.target.tagName !== "BUTTON") {
-          openFileDialog();
-        }
+        if (event.target.tagName !== "BUTTON") openFileDialog();
       }}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -50,13 +45,9 @@ export default function UploadZone({ onFilesAdded, onInvalidFiles, disabled }) {
       }}
       onDragEnter={(event) => {
         event.preventDefault();
-        if (!disabled) {
-          setIsDragActive(true);
-        }
+        if (!disabled) setIsDragActive(true);
       }}
-      onDragOver={(event) => {
-        event.preventDefault();
-      }}
+      onDragOver={(event) => event.preventDefault()}
       onDragLeave={(event) => {
         event.preventDefault();
         setIsDragActive(false);
@@ -69,11 +60,12 @@ export default function UploadZone({ onFilesAdded, onInvalidFiles, disabled }) {
       aria-disabled={disabled}
       aria-label="Upload PDF files"
     >
+      <span className="drop-zone-icon">{"\uD83D\uDCC4"}</span>
       <p>Drag and drop statement PDFs here</p>
       <p className="drop-hint">or</p>
       <button
         type="button"
-        className="button-secondary"
+        className="choose-btn"
         disabled={disabled}
         onClick={openFileDialog}
       >
