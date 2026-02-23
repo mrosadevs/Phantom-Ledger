@@ -1,9 +1,8 @@
-function renderDateRange(dateRange) {
-  if (!dateRange?.start || !dateRange?.end) {
-    return "n/a";
-  }
+import TransactionTable from "./TransactionTable";
 
-  return `${dateRange.start} to ${dateRange.end}`;
+function renderDateRange(dateRange) {
+  if (!dateRange?.start || !dateRange?.end) return "—";
+  return `${dateRange.start} \u2192 ${dateRange.end}`;
 }
 
 export default function ResultPanel({
@@ -13,7 +12,7 @@ export default function ResultPanel({
   progress,
   result,
   onProcess,
-  onDownload
+  onDownload,
 }) {
   const summary = result?.summary;
   const warnings = Array.isArray(result?.warnings) ? result.warnings : [];
@@ -23,9 +22,9 @@ export default function ResultPanel({
   const hasDownload = Boolean(result?.workbookBlob);
 
   return (
-    <section className="panel">
+    <section className="panel results-panel">
       <div className="preview-header">
-        <h2>Extract &amp; Export</h2>
+        <h2>Extract & Export</h2>
         <div className="preview-actions">
           <button
             type="button"
@@ -33,7 +32,7 @@ export default function ResultPanel({
             disabled={!canProcess}
             onClick={onProcess}
           >
-            {isProcessing ? "Extracting..." : "Extract"}
+            {isProcessing ? "Extracting\u2026" : "Extract"}
           </button>
           <button
             type="button"
@@ -43,19 +42,39 @@ export default function ResultPanel({
           >
             Download Excel
           </button>
+          <div className="export-info-wrap">
+            <button type="button" className="export-info-btn" aria-label="Export format info">
+              i
+            </button>
+            <div className="export-tooltip">
+              <h4>Excel Columns</h4>
+              <ul>
+                <li>Date</li>
+                <li>Clean Description</li>
+                <li>Amount</li>
+                <li>Original Memo</li>
+                <li>Source File</li>
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
 
-      {!fileCount ? (
+      {!fileCount && !summary ? (
         <p className="empty-note">Upload PDFs first, then run extraction.</p>
       ) : null}
 
       {isProcessing ? (
         <div className="progress-wrap" role="status" aria-live="polite">
           <div className="progress-track">
-            <div className="progress-bar" style={{ width: `${Math.max(6, progress)}%` }} />
+            <div
+              className="progress-bar animating"
+              style={{ width: `${Math.max(4, progress)}%` }}
+            />
           </div>
-          <p className="progress-label">Processing PDFs... {Math.round(progress)}%</p>
+          <p className="progress-label">
+            Processing PDFs\u2026 {Math.round(progress)}%
+          </p>
         </div>
       ) : null}
 
@@ -68,15 +87,18 @@ export default function ResultPanel({
             </article>
             <article className="summary-card">
               <h3>Files Processed</h3>
-              <p>{summary.processedFiles} / {summary.totalFiles}</p>
+              <p>
+                {summary.processedFiles}
+                <span className="summary-mono"> / {summary.totalFiles}</span>
+              </p>
             </article>
             <article className="summary-card">
               <h3>Date Range</h3>
-              <p>{renderDateRange(summary.dateRange)}</p>
+              <p className="summary-mono">{renderDateRange(summary.dateRange)}</p>
             </article>
           </div>
 
-          {warnings.length ? (
+          {warnings.length > 0 ? (
             <div className="result-list-wrap">
               <h3>Warnings</h3>
               <ul className="result-list warning">
@@ -87,31 +109,10 @@ export default function ResultPanel({
             </div>
           ) : null}
 
-          {previewTransactions.length ? (
+          {previewTransactions.length > 0 ? (
             <div className="result-list-wrap">
-              <h3>Transaction Preview (first {previewTransactions.length})</h3>
-              <div className="preview-table-wrap">
-                <table className="preview-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Amount</th>
-                      <th>Description</th>
-                      <th>Source File</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewTransactions.map((transaction, index) => (
-                      <tr key={`${transaction.date}-${transaction.description}-${index}`}>
-                        <td>{transaction.date}</td>
-                        <td className="amount">{Number(transaction.amount || 0).toFixed(2)}</td>
-                        <td>{transaction.description}</td>
-                        <td className="source-file">{transaction.sourceFile || "n/a"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <h3>Transaction Preview</h3>
+              <TransactionTable transactions={previewTransactions} />
             </div>
           ) : null}
         </>
