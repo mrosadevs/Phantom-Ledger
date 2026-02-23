@@ -102,12 +102,18 @@ app.post("/process", upload.array("pdfs"), async (req, res) => {
 
   const accountMismatchWarnings = findAccountMismatchWarnings(parsedFileSummaries);
 
+  const allAmounts = cleanedRows.map((r) => r.amount).filter(Number.isFinite);
   const summary = {
     totalFiles: files.length,
     processedFiles,
     failedFiles: suppressedParseErrors.length,
     totalTransactions: cleanedRows.length,
-    dateRange: buildDateRange(cleanedRows)
+    dateRange: buildDateRange(cleanedRows),
+    totalCredits: allAmounts.filter((a) => a > 0).reduce((s, a) => s + a, 0),
+    totalDebits: allAmounts.filter((a) => a < 0).reduce((s, a) => s + a, 0),
+    net: allAmounts.reduce((s, a) => s + a, 0),
+    creditCount: allAmounts.filter((a) => a > 0).length,
+    debitCount: allAmounts.filter((a) => a < 0).length
   };
   const downloadFileName = deriveDownloadFileName(parsedFileSummaries, files);
 
@@ -288,21 +294,23 @@ function findAccountMismatchWarnings(parsedFiles) {
     return [];
   }
 
-  const expectedAccountLabel = pickBestAccountLabel(
+  const rawExpectedLabel = pickBestAccountLabel(
     withAccount
       .filter((context) => context.accountKeys.includes(expectedAccountKey))
       .map((context) => context.accountLabelByKey.get(expectedAccountKey))
   ) || expectedAccountKey.replace(/^LAST4:/, "");
 
+  const expectedAccountLabel = maskAccountNumber(rawExpectedLabel);
+
   const mismatchDetails = mismatched.map((context) => {
     const labels = context.accountKeys
-      .map((key) => context.accountLabelByKey.get(key) || key.replace(/^LAST4:/, ""))
+      .map((key) => maskAccountNumber(context.accountLabelByKey.get(key) || key.replace(/^LAST4:/, "")))
       .join("/");
-    return `${labels} -> ${context.fileName}`;
+    return `${labels} \u2192 ${context.fileName}`;
   });
 
   return [
-    `Account mismatch detected across uploaded statements. Expected ${expectedAccountLabel}; found ${mismatchDetails.join(" | ")}.`
+    `Account mismatch detected across uploaded statements. Expected ****${expectedAccountLabel}; found ${mismatchDetails.join(" | ")}.`
   ];
 }
 
@@ -423,37 +431,18 @@ function pickMajorityCountKey(countMap) {
   return selectedKey;
 }
 
-function deriveDownloadFileName(parsedFiles, uploadedFiles) {
-  const nameCounts = new Map();
+function deriveDownloadFileName() {
+  return "AccuracyPhantomLedgerExport.xlsx";
+}
 
-  for (const file of parsedFiles || []) {
-    const primary = normalizeDisplayName(file?.metadata?.primaryBusinessName);
-    if (primary) {
-      nameCounts.set(primary, (nameCounts.get(primary) || 0) + 3);
-    }
-
-    for (const candidate of file?.metadata?.businessNameCandidates || []) {
-      const normalized = normalizeDisplayName(candidate);
-      if (normalized) {
-        nameCounts.set(normalized, (nameCounts.get(normalized) || 0) + 1);
-      }
-    }
+function maskAccountNumber(value) {
+  const raw = String(value || "").trim();
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length >= 5) {
+    return digits.slice(-4);
   }
-
-  const pickedName = pickMajorityCountKey(nameCounts);
-  if (pickedName) {
-    return `${toSafeFileName(pickedName)}.xlsx`;
-  }
-
-  if ((uploadedFiles || []).length === 1) {
-    const base = path.parse(uploadedFiles[0].originalname || "").name;
-    const normalized = toSafeFileName(normalizeDisplayName(base) || base);
-    if (normalized) {
-      return `${normalized}.xlsx`;
-    }
-  }
-
-  return "accuracy-phantom-ledger.xlsx";
+  // If 4 or fewer digits, it's already short enough
+  return raw;
 }
 
 function normalizeDisplayName(value) {

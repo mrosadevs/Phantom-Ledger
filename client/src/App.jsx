@@ -15,14 +15,15 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-02-22-cleaning-and-filename",
+  id: "2026-02-23-stats-masking-naming",
   label: "Update",
-  date: "Feb 22, 2026",
-  title: "Cleaner transaction names + statement-based Excel filename",
+  date: "Feb 23, 2026",
+  title: "Accurate stats, smarter naming & security masking",
   items: [
-    "Memo cleaning now follows your manual DocuClipper style for wire/deposit/card patterns.",
-    "Downloaded Excel uses the business/person name from statement metadata when available.",
-    "Date and amount export formatting was adjusted for plain values.",
+    "Quick Stats now shows credits & debits from all transactions, not just the preview window.",
+    "Account numbers in mismatch warnings are masked to show only the last 4 digits.",
+    "Downloaded Excel is now named after the account when no business name is detected.",
+    "Full UI redesign with animated background, dark/light themes, and responsive layout.",
   ],
 };
 

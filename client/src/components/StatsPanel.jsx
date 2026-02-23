@@ -8,6 +8,26 @@ export default function StatsPanel({ transactions, summary }) {
   const stats = useMemo(() => {
     if (!transactions || transactions.length === 0) return null;
 
+    // Prefer full-dataset stats from the backend summary when available
+    const hasSummaryStats = summary && Number.isFinite(summary.totalCredits);
+
+    if (hasSummaryStats) {
+      return {
+        totalCredits: summary.totalCredits,
+        totalDebits: summary.totalDebits,
+        net: summary.net,
+        average: summary.totalTransactions
+          ? summary.net / summary.totalTransactions
+          : 0,
+        largest: Math.max(...transactions.map((t) => Number(t.amount) || 0)),
+        smallest: Math.min(...transactions.map((t) => Number(t.amount) || 0)),
+        creditCount: summary.creditCount ?? 0,
+        debitCount: summary.debitCount ?? 0,
+        fromSummary: true,
+      };
+    }
+
+    // Fallback: calculate from preview transactions only
     const amounts = transactions.map((t) => Number(t.amount) || 0);
     const debits = amounts.filter((a) => a < 0);
     const credits = amounts.filter((a) => a > 0);
@@ -22,8 +42,9 @@ export default function StatsPanel({ transactions, summary }) {
       smallest: amounts.length ? Math.min(...amounts) : 0,
       creditCount: credits.length,
       debitCount: debits.length,
+      fromSummary: false,
     };
-  }, [transactions]);
+  }, [transactions, summary]);
 
   if (!stats) return null;
 
@@ -58,10 +79,13 @@ export default function StatsPanel({ transactions, summary }) {
           <p className="stat-value negative">{fmt(stats.smallest)}</p>
         </div>
         <p className="stat-note">
-          {"\u2139"} Based on first {transactions.length} preview transaction{transactions.length !== 1 ? "s" : ""}
-          {summary?.totalTransactions > transactions.length
-            ? ` of ${summary.totalTransactions} total`
-            : ""}
+          {stats.fromSummary
+            ? `\u2139 Based on all ${summary.totalTransactions} transactions`
+            : `\u2139 Based on first ${transactions.length} preview transaction${transactions.length !== 1 ? "s" : ""}${
+                summary?.totalTransactions > transactions.length
+                  ? ` of ${summary.totalTransactions} total`
+                  : ""
+              }`}
         </p>
       </div>
     </section>
