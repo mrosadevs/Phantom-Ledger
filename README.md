@@ -1,52 +1,111 @@
-# Accuracy Phantom Ledger
+# 👻 Phantom Ledger
 
-Accuracy Phantom Ledger merges PDF extraction and transaction cleaning into one unified app.
+### Bank Statement PDF → Clean Excel — Instantly
 
-## Flow
+<div align="center">
 
-1. Upload one or more text-based bank statement PDFs.
-2. Extract transactions from all PDFs.
-3. Clean descriptions with the full cleaning rules.
-4. Download one final Excel file.
+![Vite](https://img.shields.io/badge/Vite-React-646cff?style=for-the-badge&logo=vite&logoColor=white)
+![Express](https://img.shields.io/badge/Express-API-000000?style=for-the-badge&logo=express&logoColor=white)
+![PDF](https://img.shields.io/badge/PDF-Extraction-10b981?style=for-the-badge)
 
-## Output Excel
+**Upload bank statement PDFs, extract transactions, clean descriptions automatically, and download a polished Excel file — all in one step.**
 
-Columns (exact):
+</div>
 
-- `Date`
-- `clean transactions`
-- `amount`
-- `orginal transactons`
+---
 
-Formatting:
+## ✨ Features
 
-- Arial font
-- Bold headers
-- Auto-filter on row 1
-- Top row frozen
-- Auto-width columns
-- No colors/fills
+- 📄 **Multi-PDF Upload** — Upload one or more text-based bank statement PDFs at once
+- 🔍 **Smart Extraction** — Automatically parses dates, descriptions, and amounts
+- 🧹 **Auto-Cleaning** — Transaction descriptions are cleaned using built-in rules
+- 📊 **Excel Export** — Download a single `.xlsx` file with all transactions
+- ⚠️ **Account Mismatch Warning** — Alerts you if uploaded statements come from different accounts
+- 🤫 **Clean UX** — Parser warnings are suppressed, only relevant alerts shown
 
-## API
+---
+
+## 📊 Output Format
+
+The exported Excel file (`accuracy-phantom-ledger.xlsx`) contains:
+
+| Column | Description |
+|--------|-------------|
+| 📅 `Date` | Transaction date |
+| 🧹 `clean transactions` | Cleaned description |
+| 💰 `amount` | Transaction amount |
+| 📝 `orginal transactons` | Raw original description |
+
+**Formatting:**
+- ✅ Arial font, bold headers
+- ✅ Auto-filter on row 1, top row frozen
+- ✅ Auto-width columns
+- ❌ No colors or fills — clean and minimal
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Tech |
+|-------|------|
+| 🖥️ Client | React + Vite |
+| 🗄️ Server | Express.js |
+| 📄 PDF Parsing | pdfjs-dist |
+| 📊 Excel | ExcelJS / xlsx |
+| 🎨 Theme | Dark mode (`#06080f`) |
+
+---
+
+## 🔌 API
 
 ### `POST /process`
 
-- `Content-Type`: `multipart/form-data`
-- Field name: `pdfs`
-- Accepts multiple PDF files
-- Returns: `accuracy-phantom-ledger.xlsx`
+| Field | Details |
+|-------|---------|
+| Content-Type | `multipart/form-data` |
+| Field name | `pdfs` |
+| Accepts | Multiple PDF files |
+| Returns | `accuracy-phantom-ledger.xlsx` |
 
-## Notes
+---
 
-- Blank-page/no-transaction parser warnings are suppressed from the UI.
-- The only user-facing warning is account mismatch across uploaded statements.
-
-## Run
+## 🚀 Getting Started
 
 ```bash
+# Install dependencies
 npm install
+
+# Run both client + server
 npm run dev
 ```
 
-- Client: `http://localhost:5173`
-- Server: `http://localhost:8787`
+| Service | URL |
+|---------|-----|
+| 🖥️ Client | [http://localhost:5173](http://localhost:5173) |
+| 🗄️ Server | [http://localhost:8787](http://localhost:8787) |
+
+---
+
+## 📂 Project Structure
+
+```
+Phantom-Ledger/
+├── client/
+│   ├── index.html          # Entry point
+│   └── src/
+│       └── main.jsx        # React app
+├── server/
+│   ├── index.js            # Express server
+│   ├── pdf-parser.js       # PDF extraction logic
+│   └── cleaner.js          # Transaction cleaning rules
+├── package.json
+└── 📖 README.md            # You're here
+```
+
+---
+
+<div align="center">
+
+👻 **From messy PDFs to clean spreadsheets** 📊
+
+</div>
