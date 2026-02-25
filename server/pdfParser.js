@@ -219,18 +219,14 @@ function parsePageTransactions(lines, context) {
   for (const line of lines) {
     const text = normalizeSpaces(line.text);
     const lower = text.toLowerCase();
-    const inferredSectionSign = inferSectionSign(text);
-    if (inferredSectionSign !== null) {
-      sectionSign = inferredSectionSign;
-    }
 
     if (isHeaderLine(lower)) {
+      const inferredSectionSign = inferSectionSign(text);
+      if (inferredSectionSign !== null) {
+        sectionSign = inferredSectionSign;
+      }
       capture = true;
       headerHints = mergeHeaderHints(headerHints, inferHeaderHints(line));
-      const headerSectionSign = inferSectionSign(text);
-      if (headerSectionSign !== null) {
-        sectionSign = headerSectionSign;
-      }
       if (pending) {
         pushPendingRow(rows, pending);
         pending = null;
@@ -264,8 +260,15 @@ function parsePageTransactions(lines, context) {
       continue;
     }
 
-    if (pending && shouldAppendDescription(line, capture, headerHints)) {
+    const isContinuation = pending && shouldAppendDescription(line, capture, headerHints);
+
+    if (isContinuation) {
       pending.description = normalizeSpaces(`${pending.description} ${text}`);
+    } else {
+      const inferredSectionSign = inferSectionSign(text);
+      if (inferredSectionSign !== null) {
+        sectionSign = inferredSectionSign;
+      }
     }
   }
 
@@ -936,11 +939,11 @@ function applySectionSign(amount, description, sectionSign) {
 }
 
 function isStrongPositiveDescription(description) {
-  return /(return|reverse|reversal|deposit|credit|payment from|transfer from|online transfer from|zelle from|wire in|interest)/i.test(description);
+  return /(return|reverse|reversal|\brev\b|deposit|credit|payment from|transfer from|wire from|online transfer from|zelle from|wire in|interest)/i.test(description);
 }
 
 function isStrongNegativeDescription(description) {
-  return /(payment to|transfer to|online transfer to|zelle to|withdrawal|debit|fee|purchase|wire out|service charge|overdraft|irs usataxpymt|taxpymt|harland clarke|^\d{3,6}\s+check\b|\bcheck\b)/i.test(description);
+  return /(payment to|transfer to|online transfer to|zelle to|wire to|trn out|withdrawal|debit|fee|purchase|wire out|service charge|overdraft|irs usataxpymt|taxpymt|harland clarke|^\d{3,6}\s+check\b|\bcheck\b)/i.test(description);
 }
 
 function isNonTransactionDescription(description, amount) {
