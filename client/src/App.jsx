@@ -15,15 +15,14 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-02-23-stats-masking-naming",
+  id: "2026-02-24-sign-detection-fix",
   label: "Update",
-  date: "Feb 23, 2026",
-  title: "Accurate stats, smarter naming & security masking",
+  date: "Feb 24, 2026",
+  title: "Smarter transaction sign detection",
   items: [
-    "Quick Stats now shows credits & debits from all transactions, not just the preview window.",
-    "Account numbers in mismatch warnings are masked to show only the last 4 digits.",
-    "Downloaded Excel is now named after the account when no business name is detected.",
-    "Full UI redesign with animated background, dark/light themes, and responsive layout.",
+    "Fixed sign detection for Citibank statements \u2014 incoming wires are no longer incorrectly marked as debits.",
+    "Continuation lines (e.g. wire fee details) no longer pollute the sign context for subsequent transactions.",
+    "Added wire from/to and reversal patterns for more accurate credit vs debit classification.",
   ],
 };
 
