@@ -15,14 +15,15 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-02-24-sign-detection-fix",
-  label: "Update",
-  date: "Feb 24, 2026",
-  title: "Smarter transaction sign detection",
+  id: "2026-02-27-groq-ai-cleaning",
+  label: "New",
+  date: "Feb 27, 2026",
+  title: "AI-powered transaction cleaning",
   items: [
-    "Fixed sign detection for Citibank statements \u2014 incoming wires are no longer incorrectly marked as debits.",
-    "Continuation lines (e.g. wire fee details) no longer pollute the sign context for subsequent transactions.",
-    "Added wire from/to and reversal patterns for more accurate credit vs debit classification.",
+    "Transaction descriptions are now cleaned by AI \u2014 proper casing, merchant name extraction, and shorter fee labels.",
+    "Powered by Groq for near-instant processing, even on large statement batches.",
+    "Falls back to rule-based cleaning automatically if AI is unavailable.",
+    "Fixed sign detection for Citibank statements \u2014 incoming wires no longer incorrectly marked as debits.",
   ],
 };
 
