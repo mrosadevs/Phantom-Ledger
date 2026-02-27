@@ -7,12 +7,14 @@ const customParseFormat = require("dayjs/plugin/customParseFormat");
 const { extractTransactionsFromPdf, PdfParseError } = require("./pdfParser");
 const { cleanAndNormalizeTransaction } = require("./transactionCleaner");
 const { buildWorkbookBuffer } = require("./excelBuilder");
+const { cleanWithGroq } = require("./groqCleaner");
 
 dayjs.extend(customParseFormat);
 
 const app = express();
 const port = Number(process.env.PORT) || 8787;
 const maxFileMb = Number(process.env.MAX_FILE_MB) || 25;
+const groqApiKey = process.env.GROQ_API_KEY || "";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -99,6 +101,19 @@ app.post("/process", upload.array("pdfs"), async (req, res) => {
       dateValue: row.dateValue,
       sourceFile: row.sourceFile
     }));
+
+  if (groqApiKey && cleanedRows.length) {
+    try {
+      const descriptions = cleanedRows.map((r) => r.clean);
+      const aiCleaned = await cleanWithGroq(descriptions, groqApiKey);
+      for (let i = 0; i < cleanedRows.length; i++) {
+        cleanedRows[i].clean = aiCleaned[i] || cleanedRows[i].clean;
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.log(`[groq] AI cleaning failed, using rule-based fallback: ${error.message}`);
+    }
+  }
 
   const accountMismatchWarnings = findAccountMismatchWarnings(parsedFileSummaries);
 
