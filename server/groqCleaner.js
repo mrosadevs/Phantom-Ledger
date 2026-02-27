@@ -9,6 +9,7 @@ Rules:
 - Extract the person, company, or merchant name only
 - Remove bank codes, reference numbers, dates, card numbers, confirmation numbers
 - Remove prefixes like "FUNDS TRANSFER WIRE FROM", "MISC DEPOSIT", "DEBIT CARD PURCH", etc.
+- KEEP "Transfer to/from" prefixes — they indicate transaction direction and must stay
 - Keep it short — just the name, nothing else
 - If the input is already a clean name, return it unchanged
 - If it's a fee or service charge, return a short label like "Wire Fee", "Service Fee", "Overdraft Fee"
@@ -18,12 +19,14 @@ Rules:
 Example input:
 1. RICA RDO EL JAU HARI ABDEL
 2. INCOMING WIRE FEE
-3. WMT PLUS JEANETTE M
+3. Transfer to CHK 7590
+4. WMT PLUS JEANETTE M
 
 Example output:
 1. Rica Rdo El Jau Hari Abdel
 2. Incoming Wire Fee
-3. WMT Plus Jeanette M`;
+3. Transfer to CHK 7590
+4. WMT Plus Jeanette M`;
 
 async function cleanWithGroq(descriptions, apiKey) {
   if (!apiKey || !descriptions.length) {
