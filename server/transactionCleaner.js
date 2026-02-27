@@ -136,7 +136,10 @@ function cleanTransaction(memo) {
     if (match) {
       return match[1].trim();
     }
-    return m.replace(/^Zelle payment from /i, "").trim();
+    let name = m.replace(/^Zelle payment from /i, "").trim();
+    name = name.replace(/\s+(?:Bac|Wfct|Cof|Cti|Mac|Hna|H50|Bbt|0Ou)\S+.*/i, "");
+    name = name.replace(/\s+\d{8,}.*/, "");
+    return name.trim();
   }
 
   // RULE B3: Zelle payment to — WITH memo
@@ -153,7 +156,10 @@ function cleanTransaction(memo) {
     if (match) {
       return match[1].trim();
     }
-    return m.replace(/^Zelle payment to /i, "").trim();
+    let name = m.replace(/^Zelle payment to /i, "").trim();
+    name = name.replace(/\s+(?:Bac|Wfct|Cof|Cti|Mac|Hna|H50|Bbt|0Ou)\S+.*/i, "");
+    name = name.replace(/\s+\d{8,}.*/, "");
+    return name.trim();
   }
 
   // RULE A2: Zelle to — old format outgoing
@@ -214,7 +220,7 @@ function cleanTransaction(memo) {
 
   // RULE B7: Online transfer to CHK
   if (/^Online transfer to CHK/i.test(m)) {
-    const match = m.match(/^Online transfer to CHK (\d+)/i);
+    const match = m.match(/^Online transfer to CHK\s+\.{0,3}(\d+)/i);
     if (match) {
       return `Transfer to CHK ${match[1]}`;
     }
