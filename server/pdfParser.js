@@ -358,7 +358,8 @@ function pushPendingRow(rows, row) {
 }
 
 function extractAmount(line, remainderText, headerHints) {
-  const byColumns = headerHints.hasBalance
+  const hasExplicitDebitCredit = headerHints.debitX !== null || headerHints.creditX !== null;
+  const byColumns = (headerHints.hasBalance && !hasExplicitDebitCredit)
     ? null
     : extractAmountFromColumns(line, headerHints);
   if (byColumns) {
