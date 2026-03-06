@@ -15,6 +15,7 @@
     "start": "NODE_ENV=production node server/index.js"
   },
   "dependencies": {
+    "canvas": "^3.2.1",
     "cors": "^2.8.5",
     "dayjs": "^1.11.13",
     "exceljs": "^4.4.0",
