@@ -77,10 +77,52 @@ app.post("/process", upload.array("pdfs"), async (req, res) => {
         console.log(`[process] Suppressed parser warning(s) for ${file.originalname}: ${parsed.warnings.join(" | ")}`);
       }
     } catch (error) {
-      suppressedParseErrors.push({
-        file: file.originalname,
-        error: mapErrorMessage(error)
-      });
+      if (error instanceof PdfParseError && error.code === "IMAGE_BASED" && groqApiKey) {
+        try {
+          // eslint-disable-next-line no-console
+          console.log(`[vision] Image-based PDF detected: ${file.originalname} — attempting OCR`);
+          const { pdfBufferToImages } = require("./pdfToImages");
+          const { extractTransactionsFromImages } = require("./groqVision");
+
+          const images = await pdfBufferToImages(file.buffer);
+          const visionTransactions = await extractTransactionsFromImages(images, groqApiKey);
+
+          if (visionTransactions.length > 0) {
+            processedFiles += 1;
+            parsedFileSummaries.push({
+              fileName: file.originalname,
+              transactions: visionTransactions,
+              metadata: {}
+            });
+            rawRows.push(
+              ...visionTransactions.map((row) => ({
+                date: row.date,
+                dateValue: safeDateValue(row.date),
+                description: row.description,
+                amount: Number(row.amount),
+                sourceFile: file.originalname
+              }))
+            );
+          } else {
+            suppressedParseErrors.push({
+              file: file.originalname,
+              error: "Image-based PDF: no transactions found via OCR."
+            });
+          }
+        } catch (ocrError) {
+          // eslint-disable-next-line no-console
+          console.log(`[vision] OCR failed for ${file.originalname}: ${ocrError.message}`);
+          suppressedParseErrors.push({
+            file: file.originalname,
+            error: mapErrorMessage(error)
+          });
+        }
+      } else {
+        suppressedParseErrors.push({
+          file: file.originalname,
+          error: mapErrorMessage(error)
+        });
+      }
     }
   }
 
