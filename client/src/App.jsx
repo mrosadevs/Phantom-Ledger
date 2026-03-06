@@ -15,15 +15,15 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-02-27-groq-ai-cleaning",
-  label: "New",
-  date: "Feb 27, 2026",
-  title: "AI-powered transaction cleaning",
+  id: "2026-03-06-debit-credit-column-fix",
+  label: "Fix",
+  date: "Mar 6, 2026",
+  title: "Debit vs credit column detection improved",
   items: [
-    "Transaction descriptions are now cleaned by AI \u2014 proper casing, merchant name extraction, and shorter fee labels.",
-    "Powered by Groq for near-instant processing, even on large statement batches.",
-    "Falls back to rule-based cleaning automatically if AI is unavailable.",
-    "Fixed sign detection for Citibank statements \u2014 incoming wires no longer incorrectly marked as debits.",
+    "Fixed transactions being misclassified when a statement has separate Debits, Credits, and Balance columns (e.g. Wells Fargo).",
+    "Zelle payment descriptions now correctly strip trailing bank reference codes.",
+    "Online Transfer to CHK now correctly handled for statements using the \u2018...XXXX\u2019 account format.",
+    "AI-powered transaction cleaning via Groq \u2014 proper casing and merchant name extraction.",
   ],
 };
 
