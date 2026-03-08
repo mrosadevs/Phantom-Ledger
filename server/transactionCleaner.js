@@ -12,6 +12,21 @@ const normalizeMap = {
   "FPL DIRECT DEBIT": "FPL DIRECT"
 };
 
+// Strips trailing Srf# references and short bank codes (≤4 chars) that precede them.
+// e.g. "Torre DE Inversiones Rt Corp Srf#..." → "Torre DE Inversiones"
+function cleanFedWireName(raw) {
+  let name = String(raw || "").trim();
+  const srf = name.toLowerCase().indexOf(" srf#");
+  if (srf !== -1) {
+    const parts = name.substring(0, srf).split(" ");
+    while (parts.length && parts[parts.length - 1].length <= 4) {
+      parts.pop();
+    }
+    name = parts.join(" ");
+  }
+  return name.trim();
+}
+
 function cleanTransaction(memo) {
   if (!memo || typeof memo !== "string") {
     return memo;
@@ -259,15 +274,39 @@ function cleanTransaction(memo) {
     return "Online Banking payment";
   }
 
-  // RULE A1: WT outgoing wire — old format
+  // RULE A0: WT Fed# wire (Chase format)
+  // Examples:
+  //   "WT Fed#02946 Bank of America, N /Org=1/Gizel Anabel" → "Gizel Anabel"
+  //   "WT Fed#01328 National Bank of G /Ftr/Bnf=Nicolas Jose" → "Nicolas Jose"
+  //   "WT Fed#03449 Jpmorgan Chase Ban /Org=Mazimport, Corp" → "Mazimport, Corp"
+  if (/^WT Fed#/i.test(m)) {
+    const ftrBnf = m.match(/\/Ftr\/Bnf=(.+?)(?:\s+Srf#|\s*$)/i);
+    if (ftrBnf) return cleanFedWireName(ftrBnf[1]);
+
+    const bnf = m.match(/\/Bnf=(.+?)(?:\s+Srf#|\s*$)/i);
+    if (bnf) return cleanFedWireName(bnf[1]);
+
+    // /Org= may have a leading digit-slash prefix (e.g. "1/Gizel Anabel")
+    const org = m.match(/\/Org=(?:\d+\/)?(.+)/i);
+    if (org) return cleanFedWireName(org[1]);
+  }
+
+  // RULE A1: WT outgoing wire — date-ref format (e.g. "WT 250218-211513 Bank of China /Bnf=Linyi United")
   if (/^WT\s+\d/.test(m)) {
-    const bnf = m.match(/\/Bnf=(.+?)\s+Srf#/);
-    if (bnf) {
-      let name = bnf[1].trim();
+    // With /Bnf= and Srf#: extract beneficiary name
+    const bnfSrf = m.match(/\/Bnf=(.+?)\s+Srf#/i);
+    if (bnfSrf) {
+      let name = bnfSrf[1].trim();
       name = name.replace(/^G\s+/, "");
       name = name.replace(/\s+CO,.*/, "").replace(/\s+CA,.*/, "");
       return name.trim();
     }
+    // Without Srf#, with /Bnf=: use the bank/institution name (text between ref# and /Bnf=)
+    const bankBnf = m.match(/^WT\s+\S+\s+(.+?)\s+\/Bnf=/i);
+    if (bankBnf) return bankBnf[1].trim();
+    // With /Org=: use the text between ref# and /Org= (originator bank or person name)
+    const beforeOrg = m.match(/^WT\s+\S+\s+(.+?)\s+\/Org=/i);
+    if (beforeOrg) return beforeOrg[1].trim();
     return m;
   }
 

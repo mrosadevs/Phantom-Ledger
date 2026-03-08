@@ -10,6 +10,7 @@ Rules:
 - Remove bank codes, reference numbers, dates, card numbers, confirmation numbers
 - Remove prefixes like "FUNDS TRANSFER WIRE FROM", "MISC DEPOSIT", "DEBIT CARD PURCH", etc.
 - KEEP "Transfer to/from" prefixes — they indicate transaction direction and must stay
+- For wire descriptions: the intermediary bank in the middle is NOT the counterparty — extract the name after /Org= (sender) or /Bnf= or /Ftr/Bnf= (recipient) instead
 - Keep it short — just the name, nothing else
 - If the input is already a clean name, return it unchanged
 - If it's a fee or service charge, return a short label like "Wire Fee", "Service Fee", "Overdraft Fee"
@@ -21,12 +22,16 @@ Example input:
 2. INCOMING WIRE FEE
 3. Transfer to CHK 7590
 4. WMT PLUS JEANETTE M
+5. WT Fed#03449 Jpmorgan Chase Ban /Org=Mazimport, Corp
+6. WT Fed#01328 National Bank of G /Ftr/Bnf=Nicolas Jose
 
 Example output:
 1. Rica Rdo El Jau Hari Abdel
 2. Incoming Wire Fee
 3. Transfer to CHK 7590
-4. WMT Plus Jeanette M`;
+4. WMT Plus Jeanette M
+5. Mazimport, Corp
+6. Nicolas Jose`;
 
 async function cleanWithGroq(descriptions, apiKey) {
   if (!apiKey || !descriptions.length) {
