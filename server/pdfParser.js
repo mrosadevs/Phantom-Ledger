@@ -727,8 +727,19 @@ function inferHeaderHints(line) {
   if (!hints.hasDebitCredit && compact.includes("creditsdebits")) {
     hints.hasDebitCredit = true;
   }
+  // Spanish: "retiros"/"débitos" = withdrawals/debits, "depósitos"/"créditos" = deposits/credits
+  if (!hints.hasDebitCredit
+    && (compact.includes("retiros") || compact.includes("dbitos"))
+    && (compact.includes("depsitos") || compact.includes("crditos"))) {
+    hints.hasDebitCredit = true;
+  }
+
   hints.hasBalance = /\bbalance\b/.test(lower);
   if (!hints.hasBalance && compact.includes("balance")) {
+    hints.hasBalance = true;
+  }
+  // Spanish: "saldo" = balance
+  if (!hints.hasBalance && compact.includes("saldo")) {
     hints.hasBalance = true;
   }
 
@@ -736,28 +747,31 @@ function inferHeaderHints(line) {
     const text = normalizeSpaces(chunk.str.toLowerCase());
     const textCompact = compactLetters(text);
 
-    if (hints.dateX === null && (/\bdate\b/.test(text) || textCompact.includes("date"))) {
+    if (hints.dateX === null && (/\bdate\b/.test(text) || textCompact.includes("date") || textCompact.includes("fecha"))) {
       hints.dateX = chunk.x;
     }
     if (
       hints.descriptionX === null
       && (
-        /(description|memo|transaction|details|narrative|activity)/.test(text)
+        /(description|memo|transaction|details|narrative|activity|descripci)/.test(text)
         || textCompact.includes("description")
       )
     ) {
       hints.descriptionX = chunk.x;
     }
-    if (hints.debitX === null && (/(debit|withdrawal)/.test(text) || textCompact.includes("debit"))) {
+    if (hints.debitX === null && (/(debit|withdrawal)/.test(text) || textCompact.includes("debit")
+      || textCompact.includes("retiros") || textCompact.includes("dbitos"))) {
       hints.debitX = chunk.x;
     }
-    if (hints.creditX === null && (/(credit|deposit)/.test(text) || textCompact.includes("credit"))) {
+    if (hints.creditX === null && (/(credit|deposit)/.test(text) || textCompact.includes("credit")
+      || textCompact.includes("depsitos") || textCompact.includes("crditos"))) {
       hints.creditX = chunk.x;
     }
     if (hints.amountX === null && (/\bamount\b/.test(text) || textCompact.includes("amount"))) {
       hints.amountX = chunk.x;
     }
-    if (hints.balanceX === null && (/\bbalance\b/.test(text) || textCompact.includes("balance"))) {
+    if (hints.balanceX === null && (/\bbalance\b/.test(text) || textCompact.includes("balance")
+      || textCompact.includes("saldo"))) {
       hints.balanceX = chunk.x;
     }
   }

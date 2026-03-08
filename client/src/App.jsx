@@ -15,15 +15,14 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-03-08-wire-balance-fixes",
+  id: "2026-03-08-spanish-headers",
   label: "Fix",
   date: "Mar 8, 2026",
-  title: "Wire transfer names & balance column fixes",
+  title: "Spanish-language bank statement support",
   items: [
-    "Fixed wire transfers (WT Fed# format) showing the intermediary bank name instead of the actual sender/recipient \u2014 now correctly extracts the name from /Org=, /Bnf=, or /Ftr/Bnf= fields.",
-    "Fixed running balance values being counted as transaction amounts on multi-page statements \u2014 hasBalance detection now persists across continuation pages.",
-    "Groq Vision OCR now explicitly ignores the Balance/Running Balance column when extracting amounts from image-based PDFs.",
-    "AI cleaning prompt updated with wire transfer examples so the intermediary bank is never returned as the payee.",
+    "Fixed balance column detection for Spanish-language Wells Fargo statements — headers like \u201cSaldo diario final\u201d and \u201cD\u00e9bitos/Cr\u00e9ditos\u201d are now recognized correctly.",
+    "Running balance values on Spanish statements are no longer counted as transaction amounts.",
+    "Wire transfer names and balance column persistence fixes from previous update also included.",
   ],
 };
 
