@@ -89,6 +89,10 @@ async function extractTransactionsFromPdf(buffer, fileName) {
 
   const dateContext = inferDateContext(pageCollection.flat());
 
+  // Persist balance/debit-credit flags across pages so continuation pages
+  // (which repeat no column headers) still use the correct amount column.
+  let persistedHints = createHeaderHints();
+
   for (let index = 0; index < pageCollection.length; index += 1) {
     const lines = pageCollection[index];
     const pageNumber = index + 1;
@@ -101,10 +105,14 @@ async function extractTransactionsFromPdf(buffer, fileName) {
       line.account = currentAccount;
     }
 
-    const pageResult = parsePageTransactions(lines, { dateContext });
+    const pageResult = parsePageTransactions(lines, { dateContext, persistedHints });
     if (!pageResult.rows.length && lines.length) {
       warnings.push(`Page ${pageNumber}: no transactions recognized.`);
     }
+
+    // Carry forward any newly-detected column flags to the next page.
+    if (pageResult.pageHints.hasBalance) persistedHints.hasBalance = true;
+    if (pageResult.pageHints.hasDebitCredit) persistedHints.hasDebitCredit = true;
 
     parsedRows.push(...pageResult.rows);
   }
@@ -214,7 +222,11 @@ function parsePageTransactions(lines, context) {
   let capture = false;
   let pending = null;
   let sectionSign = 0;
+  // Seed boolean flags from the previous page so continuation pages without
+  // column headers still know whether a balance column is present.
   let headerHints = createHeaderHints();
+  if (context?.persistedHints?.hasBalance) headerHints.hasBalance = true;
+  if (context?.persistedHints?.hasDebitCredit) headerHints.hasDebitCredit = true;
 
   for (const line of lines) {
     const text = normalizeSpaces(line.text);
@@ -279,7 +291,8 @@ function parsePageTransactions(lines, context) {
   return {
     rows: rows.filter(
       (row) => row && row.date && row.description && Number.isFinite(row.amount)
-    )
+    ),
+    pageHints: headerHints
   };
 }
 

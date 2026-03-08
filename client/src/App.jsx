@@ -15,15 +15,15 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-03-06-image-ocr",
-  label: "New",
-  date: "Mar 6, 2026",
-  title: "OCR support for image-based PDFs",
+  id: "2026-03-08-wire-balance-fixes",
+  label: "Fix",
+  date: "Mar 8, 2026",
+  title: "Wire transfer names & balance column fixes",
   items: [
-    "Image-based PDFs (scanned statements) are now processed automatically via Groq Vision OCR \u2014 no text layer required.",
-    "Fixed transactions being misclassified when a statement has separate Debits, Credits, and Balance columns (e.g. Wells Fargo).",
-    "Zelle payment descriptions now correctly strip trailing bank reference codes.",
-    "AI-powered transaction cleaning via Groq \u2014 proper casing and merchant name extraction.",
+    "Fixed wire transfers (WT Fed# format) showing the intermediary bank name instead of the actual sender/recipient \u2014 now correctly extracts the name from /Org=, /Bnf=, or /Ftr/Bnf= fields.",
+    "Fixed running balance values being counted as transaction amounts on multi-page statements \u2014 hasBalance detection now persists across continuation pages.",
+    "Groq Vision OCR now explicitly ignores the Balance/Running Balance column when extracting amounts from image-based PDFs.",
+    "AI cleaning prompt updated with wire transfer examples so the intermediary bank is never returned as the payee.",
   ],
 };
 

@@ -12,7 +12,10 @@ Each object in the array must have exactly these fields:
 - "amount": number (negative for withdrawals/debits/payments/fees, positive for deposits/credits)
 
 Rules:
-- Skip header rows, running totals, beginning balance, ending balance
+- Skip header rows, running totals, beginning balance, ending balance, and daily balance summary rows
+- Bank statement rows typically have the format: Date | Description | Amount | Running Balance
+- The LAST column is usually the running Balance — DO NOT use it as the transaction amount
+- Use ONLY the Debit, Credit, Withdrawal, or Deposit column for the amount value
 - If you see separate Debit and Credit columns, use the appropriate sign
 - If a transaction is in the Debit/Withdrawal column, the amount is negative
 - If a transaction is in the Credit/Deposit column, the amount is positive
