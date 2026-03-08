@@ -15,14 +15,15 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-03-08-spanish-headers",
+  id: "2026-03-08-spanish-headers-v2",
   label: "Fix",
   date: "Mar 8, 2026",
-  title: "Spanish-language bank statement support",
+  title: "Spanish Wells Fargo statements fully fixed",
   items: [
-    "Fixed balance column detection for Spanish-language Wells Fargo statements — headers like \u201cSaldo diario final\u201d and \u201cD\u00e9bitos/Cr\u00e9ditos\u201d are now recognized correctly.",
-    "Running balance values on Spanish statements are no longer counted as transaction amounts.",
-    "Wire transfer names and balance column persistence fixes from previous update also included.",
+    "Fixed a deep parser bug where Spanish Wells Fargo headers (D\u00e9bitos/Cr\u00e9ditos, Saldo diario final) were split across two PDF rows, causing neither row to be recognized as a column header.",
+    "Running balance values (e.g. \u201c8,686.80\u201d) are no longer mistaken for transaction amounts — the correct small debit amount is now extracted from the Retiros column.",
+    "Wire transfer service charges (Wire Trans Svc Charge) now correctly show as debits instead of positive.",
+    "Citibank and other English-language statements are unaffected.",
   ],
 };
 

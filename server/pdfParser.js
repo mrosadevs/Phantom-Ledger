@@ -679,17 +679,42 @@ function isHeaderLine(lowerText) {
   }
 
   const compact = compactLetters(lowerText);
-  const hasDate = /\bdate\b/.test(lowerText) || compact.includes("date");
+  const hasDate = /\bdate\b/.test(lowerText) || compact.includes("date")
+    || compact.includes("fecha");
   const hasDescription = /(description|memo|transaction|details|narrative|activity)/.test(lowerText)
     || compact.includes("description")
-    || compact.includes("transactionhistory");
+    || compact.includes("transactionhistory")
+    || compact.includes("descripcion");
   const hasAmount = /(amount|debit|credit|withdrawal|deposit|balance)/.test(lowerText)
     || compact.includes("amount")
     || compact.includes("debit")
     || compact.includes("credit")
-    || compact.includes("balance");
+    || compact.includes("balance")
+    || compact.includes("retiros")
+    || compact.includes("dbitos")
+    || compact.includes("debitos")
+    || compact.includes("depsitos")
+    || compact.includes("depositos")
+    || compact.includes("crditos")
+    || compact.includes("creditos");
 
-  return hasDate && hasDescription && hasAmount;
+  if (hasDate && hasDescription && hasAmount) {
+    return true;
+  }
+
+  // Spanish Wells Fargo statements split column headers across two y-rows,
+  // so neither row alone satisfies date+description+amount. Detect them by
+  // the presence of BOTH a debit column keyword AND a credit/balance keyword.
+  const hasSpanishDebit = compact.includes("retiros")
+    || compact.includes("dbitos")
+    || compact.includes("debitos");
+  const hasSpanishCreditOrBalance = compact.includes("depsitos")
+    || compact.includes("depositos")
+    || compact.includes("crditos")
+    || compact.includes("creditos")
+    || compact.includes("saldo");
+
+  return hasSpanishDebit && hasSpanishCreditOrBalance;
 }
 
 function isFooterLine(lowerText) {
@@ -728,9 +753,10 @@ function inferHeaderHints(line) {
     hints.hasDebitCredit = true;
   }
   // Spanish: "retiros"/"débitos" = withdrawals/debits, "depósitos"/"créditos" = deposits/credits
+  // Handles both accented (PDF with unicode) and non-accented (plain-ASCII) variants.
   if (!hints.hasDebitCredit
-    && (compact.includes("retiros") || compact.includes("dbitos"))
-    && (compact.includes("depsitos") || compact.includes("crditos"))) {
+    && (compact.includes("retiros") || compact.includes("dbitos") || compact.includes("debitos"))
+    && (compact.includes("depsitos") || compact.includes("crditos") || compact.includes("depositos") || compact.includes("creditos"))) {
     hints.hasDebitCredit = true;
   }
 
@@ -760,11 +786,12 @@ function inferHeaderHints(line) {
       hints.descriptionX = chunk.x;
     }
     if (hints.debitX === null && (/(debit|withdrawal)/.test(text) || textCompact.includes("debit")
-      || textCompact.includes("retiros") || textCompact.includes("dbitos"))) {
+      || textCompact.includes("retiros") || textCompact.includes("dbitos") || textCompact.includes("debitos"))) {
       hints.debitX = chunk.x;
     }
     if (hints.creditX === null && (/(credit|deposit)/.test(text) || textCompact.includes("credit")
-      || textCompact.includes("depsitos") || textCompact.includes("crditos"))) {
+      || textCompact.includes("depsitos") || textCompact.includes("crditos")
+      || textCompact.includes("depositos") || textCompact.includes("creditos"))) {
       hints.creditX = chunk.x;
     }
     if (hints.amountX === null && (/\bamount\b/.test(text) || textCompact.includes("amount"))) {
