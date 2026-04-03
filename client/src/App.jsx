@@ -15,14 +15,14 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-04-03-bofa-credit-card-support",
+  id: "2026-04-03-bofa-credit-card-signs",
   label: "Fix",
   date: "Apr 3, 2026",
-  title: "Bank of America credit card statements now supported",
+  title: "Bank of America credit card statements fully supported",
   items: [
-    "Fixed parsing of BofA credit card PDFs — purchases, payments, cash advances, and statement credits are now all extracted correctly.",
-    "Previously, only the first section (Payments) was captured; everything after a \"TOTAL PAYMENTS\" footer line was silently dropped because the parser didn't recognize credit card section labels as transaction-block headers.",
-    "Section signs are applied automatically: purchases come through as debits, payments and statement credits as credits.",
+    "Fixed parsing of BofA credit card PDFs — all transactions (purchases, payments, cash advances, and statement credits) are now extracted correctly.",
+    "Fixed transaction signs: purchases are debits, payments and statement credits are correctly positive — previously all transactions came through as negative.",
+    "BofA credit card PDFs render the \"-\" sign as a separate text element next to the amount; the parser now handles this correctly and applies the right sign based on which section the transaction belongs to.",
   ],
 };
 
