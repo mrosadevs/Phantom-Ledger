@@ -222,6 +222,11 @@ function parsePageTransactions(lines, context) {
   let capture = false;
   let pending = null;
   let sectionSign = 0;
+  // True while inside a BofA credit card section (Purchases / Payments / Cash
+  // Advances).  In that context the PDF's own sign convention differs from what
+  // we want for accounting output, so we always apply sectionSign rather than
+  // trusting the explicit sign on the amount token.
+  let inCreditCardSection = false;
   // Seed boolean flags from the previous page so continuation pages without
   // column headers still know whether a balance column is present.
   let headerHints = createHeaderHints();
@@ -238,6 +243,7 @@ function parsePageTransactions(lines, context) {
         sectionSign = inferredSectionSign;
       }
       capture = true;
+      inCreditCardSection = false;
       headerHints = mergeHeaderHints(headerHints, inferHeaderHints(line));
       if (pending) {
         pushPendingRow(rows, pending);
@@ -263,6 +269,7 @@ function parsePageTransactions(lines, context) {
         sectionSign = inferredSectionSign;
       }
       capture = true;
+      inCreditCardSection = true;
       if (pending) {
         pushPendingRow(rows, pending);
         pending = null;
@@ -283,7 +290,7 @@ function parsePageTransactions(lines, context) {
         pushPendingRow(rows, pending);
       }
 
-      pending = parseTransactionLine(line, dateToken, headerHints, context, sectionSign);
+      pending = parseTransactionLine(line, dateToken, headerHints, context, sectionSign, inCreditCardSection);
       continue;
     }
 
@@ -311,7 +318,7 @@ function parsePageTransactions(lines, context) {
   };
 }
 
-function parseTransactionLine(line, dateToken, headerHints, context, sectionSign) {
+function parseTransactionLine(line, dateToken, headerHints, context, sectionSign, inCreditCardSection = false) {
   const normalizedDate = normalizeDate(dateToken.raw, context?.dateContext);
   if (!normalizedDate) {
     return null;
@@ -343,9 +350,14 @@ function parseTransactionLine(line, dateToken, headerHints, context, sectionSign
   }
 
   let finalAmount = amountResult.amount;
-  if (!amountResult.explicitSign) {
-    finalAmount = applySectionSign(finalAmount, description, sectionSign);
-  }
+  // Always run applySectionSign so that strong description-based overrides
+  // (e.g. "payment from" → positive) fire even when the amount token carries
+  // its own sign.  For credit card sections the PDF's sign convention differs
+  // from accounting output, so always apply sectionSign there.  For all other
+  // contexts, pass sectionSign=0 for explicit-sign tokens so only the
+  // description check can flip the sign, not the section heuristic.
+  const effectiveSectionSign = (amountResult.explicitSign && !inCreditCardSection) ? 0 : sectionSign;
+  finalAmount = applySectionSign(finalAmount, description, effectiveSectionSign);
 
   description = sanitizeTransactionDescription(description, finalAmount);
   if (!description) {
@@ -1037,7 +1049,9 @@ function applySectionSign(amount, description, sectionSign) {
 }
 
 function isStrongPositiveDescription(description) {
-  return /(return|reverse|reversal|\brev\b|deposit|credit|payment from|transfer from|wire from|online transfer from|zelle from|wire in|interest)/i.test(description);
+  // "cr edit" catches BofA credit card PDFs where the word "CREDIT" is split
+  // across two text items by the PDF renderer and joined as "CR EDIT".
+  return /(return|reverse|reversal|\brev\b|deposit|credit|cr\s+edit|cash\s+rewards|payment from|transfer from|wire from|online transfer from|zelle from|wire in|interest)/i.test(description);
 }
 
 function isStrongNegativeDescription(description) {
