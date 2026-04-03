@@ -15,14 +15,14 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-04-03-groq-name-alignment-fix",
+  id: "2026-04-03-bofa-credit-card-support",
   label: "Fix",
   date: "Apr 3, 2026",
-  title: "Transaction names now align correctly with their amounts",
+  title: "Bank of America credit card statements now supported",
   items: [
-    "Fixed a bug where the AI name-cleaner occasionally inserted an extra item in its response, shifting payee names off by one row for the remainder of the batch — amounts and dates were always correct, only the cleaned names were misaligned.",
-    "The cleaner now validates that the AI returned exactly the right number of items before applying any results; if the count is off, it falls back to the built-in rule-based cleaner instead.",
-    "Affects exports where 40+ transactions were processed in a single batch and the AI model added a spurious extra line.",
+    "Fixed parsing of BofA credit card PDFs — purchases, payments, cash advances, and statement credits are now all extracted correctly.",
+    "Previously, only the first section (Payments) was captured; everything after a \"TOTAL PAYMENTS\" footer line was silently dropped because the parser didn't recognize credit card section labels as transaction-block headers.",
+    "Section signs are applied automatically: purchases come through as debits, payments and statement credits as credits.",
   ],
 };
 
