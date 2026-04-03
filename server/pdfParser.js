@@ -255,6 +255,21 @@ function parsePageTransactions(lines, context) {
       continue;
     }
 
+    // Re-enable capture for BofA credit card section labels without touching
+    // the column-position hints already set by the real column-header row.
+    if (isCreditCardSectionLabel(lower)) {
+      const inferredSectionSign = inferSectionSign(text);
+      if (inferredSectionSign !== null) {
+        sectionSign = inferredSectionSign;
+      }
+      capture = true;
+      if (pending) {
+        pushPendingRow(rows, pending);
+        pending = null;
+      }
+      continue;
+    }
+
     const dateToken = extractLeadingDate(text);
     const hasAmount = lineHasAmountToken(line);
     const dateCount = countDateTokens(text);
@@ -714,11 +729,28 @@ function isHeaderLine(lowerText) {
     || compact.includes("creditos")
     || compact.includes("saldo");
 
-  return hasSpanishDebit && hasSpanishCreditOrBalance;
+  if (hasSpanishDebit && hasSpanishCreditOrBalance) {
+    return true;
+  }
+
+  return false;
 }
 
 function isFooterLine(lowerText) {
   return FOOTER_PATTERNS.some((pattern) => pattern.test(lowerText));
+}
+
+// Bank of America credit card statements divide transactions into labelled
+// sections ("Purchases and Other Charges", "Payments and Other Credits",
+// "Cash Advances") that appear AFTER a "TOTAL ... FOR THIS PERIOD" footer
+// line which resets capture=false.  These section labels must re-enable
+// capture without disturbing the column-position hints already inferred from
+// the real column-header row earlier on the same page.
+function isCreditCardSectionLabel(lowerText) {
+  const compact = compactLetters(lowerText);
+  return compact === "purchasesandothercharges"
+    || compact === "paymentsandothercredits"
+    || compact === "cashadvances";
 }
 
 function detectAccountLabel(lineText) {
@@ -959,6 +991,17 @@ function inferSectionSign(text) {
 
   if (/(deposits and additions|deposits, credits and interest|deposits and credits)/i.test(normalized)) {
     return 1;
+  }
+
+  // Bank of America credit card section labels
+  if (/^purchases and other charges$/i.test(normalized)) {
+    return -1;
+  }
+  if (/^payments and other credits$/i.test(normalized)) {
+    return 1;
+  }
+  if (/^cash advances$/i.test(normalized)) {
+    return -1;
   }
 
   if (!hasDepositKeyword && !hasDebitKeyword) {
