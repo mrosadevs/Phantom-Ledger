@@ -84,15 +84,27 @@ async function cleanWithGroq(descriptions, apiKey) {
       const content = data.choices?.[0]?.message?.content || "";
       const lines = content.split("\n").filter((l) => l.trim());
 
+      const batchResults = new Array(batch.length).fill(null);
       for (const line of lines) {
         const match = line.match(/^(\d+)\.\s*(.+)/);
         if (match) {
           const idx = parseInt(match[1], 10) - 1;
           const cleaned = match[2].trim();
           if (idx >= 0 && idx < batch.length && cleaned) {
-            results[offset + idx] = cleaned;
+            batchResults[idx] = cleaned;
           }
         }
+      }
+
+      // Only apply if every slot was filled — guards against the LLM inserting
+      // extra items, which shifts all subsequent names off by one.
+      if (batchResults.every((v) => v !== null)) {
+        for (let i = 0; i < batch.length; i++) {
+          results[offset + i] = batchResults[i];
+        }
+      } else {
+        // eslint-disable-next-line no-console
+        console.log(`[groq] Batch ${batchIndex + 1}/${batches.length} returned wrong item count — using rule-based fallback for this batch.`);
       }
     } catch (error) {
       // eslint-disable-next-line no-console

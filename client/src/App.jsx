@@ -15,15 +15,14 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-03-08-spanish-headers-v2",
+  id: "2026-04-03-groq-name-alignment-fix",
   label: "Fix",
-  date: "Mar 8, 2026",
-  title: "Spanish Wells Fargo statements fully fixed",
+  date: "Apr 3, 2026",
+  title: "Transaction names now align correctly with their amounts",
   items: [
-    "Fixed a deep parser bug where Spanish Wells Fargo headers (D\u00e9bitos/Cr\u00e9ditos, Saldo diario final) were split across two PDF rows, causing neither row to be recognized as a column header.",
-    "Running balance values (e.g. \u201c8,686.80\u201d) are no longer mistaken for transaction amounts — the correct small debit amount is now extracted from the Retiros column.",
-    "Wire transfer service charges (Wire Trans Svc Charge) now correctly show as debits instead of positive.",
-    "Citibank and other English-language statements are unaffected.",
+    "Fixed a bug where the AI name-cleaner occasionally inserted an extra item in its response, shifting payee names off by one row for the remainder of the batch — amounts and dates were always correct, only the cleaned names were misaligned.",
+    "The cleaner now validates that the AI returned exactly the right number of items before applying any results; if the count is off, it falls back to the built-in rule-based cleaner instead.",
+    "Affects exports where 40+ transactions were processed in a single batch and the AI model added a spurious extra line.",
   ],
 };
 
