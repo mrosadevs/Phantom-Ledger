@@ -76,6 +76,42 @@ function cleanTransaction(memo) {
     return instantPaymentDebit[1].trim();
   }
 
+  // RULE C2: Chase "Non-Chase ATM Withdraw" — address is not a useful merchant
+  if (/^Non-Chase ATM Withdraw\b/i.test(m)) {
+    return "ATM Withdrawal";
+  }
+
+  // RULE C1: Chase "Card Purchase [With Pin] MM/DD <Merchant> [<City>] [<ST>] Card <NNNN> [<currency>]"
+  // e.g. "Card Purchase 01/05 Shell Oil 57543374706 Miami FL Card 3966" → "Shell Oil"
+  // e.g. "Card Purchase 09/05 7-Eleven Yangyang-Gun Card 8704 Won" → "7-Eleven"
+  if (/^Card Purchase(?:\s+With\s+Pin)?\s+\d{1,2}\/\d{1,2}\s+/i.test(m)) {
+    let rest = m.replace(/^Card Purchase(?:\s+With\s+Pin)?\s+\d{1,2}\/\d{1,2}\s+/i, "");
+    // Strip " Card NNNN ..." suffix (card number + optional currency)
+    rest = rest.replace(/\s+Card\s+\d{4}\b.*$/i, "");
+    // Strip trailing 2-letter US state code
+    rest = rest.replace(/\s+[A-Z]{2}$/, "");
+    // Strip trailing city words: find rightmost word containing a digit — everything
+    // after it (pure-alpha words) is the city/location, not the merchant name.
+    const words = rest.split(/\s+/);
+    let lastDigitIdx = -1;
+    for (let i = 0; i < words.length; i++) {
+      if (/\d/.test(words[i])) lastDigitIdx = i;
+    }
+    if (lastDigitIdx !== -1) {
+      rest = words.slice(0, lastDigitIdx + 1).join(" ");
+      // Strip " - NNNN" store number suffix formats BEFORE stripping long digits
+      rest = rest.replace(/\s+-\s*\d+$/, "");
+      // Strip trailing long pure-digit codes (5+ digits) — merchant terminal IDs,
+      // not store numbers in # format
+      rest = rest.replace(/\s+\d{5,}$/, "");
+    }
+    // Strip Square payment prefix "Sq *"
+    rest = rest.replace(/^Sq\s*\*\s*/i, "");
+    // Strip any trailing punctuation/symbols left over (e.g. lone "-")
+    rest = rest.replace(/[\s\-*,;]+$/, "");
+    return rest.trim() || m;
+  }
+
   // Pattern: debit card purchase, keep merchant only
   if (/^DEBIT CARD PURCH Card Ending in /i.test(m)) {
     let rest = m.replace(/^DEBIT CARD PURCH Card Ending in \d+\s+\S+\s+\d+\s+[A-Za-z]{3}\s+\d{1,2}\s+/i, "");

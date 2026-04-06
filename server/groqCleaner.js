@@ -8,7 +8,8 @@ const SYSTEM_PROMPT = `You clean bank transaction descriptions. For each numbere
 Rules:
 - Extract the person, company, or merchant name only
 - Remove bank codes, reference numbers, dates, card numbers, confirmation numbers
-- Remove prefixes like "FUNDS TRANSFER WIRE FROM", "MISC DEPOSIT", "DEBIT CARD PURCH", etc.
+- Remove prefixes like "FUNDS TRANSFER WIRE FROM", "MISC DEPOSIT", "DEBIT CARD PURCH", "Card Purchase MM/DD", etc.
+- Remove trailing location info (city, state, country) that follows the merchant name
 - KEEP "Transfer to/from" prefixes — they indicate transaction direction and must stay
 - For wire descriptions: the intermediary bank in the middle is NOT the counterparty — extract the name after /Org= (sender) or /Bnf= or /Ftr/Bnf= (recipient) instead
 - Keep it short — just the name, nothing else
@@ -24,6 +25,9 @@ Example input:
 4. WMT PLUS JEANETTE M
 5. WT Fed#03449 Jpmorgan Chase Ban /Org=Mazimport, Corp
 6. WT Fed#01328 National Bank of G /Ftr/Bnf=Nicolas Jose
+7. Card Purchase 01/05 Shell Oil 57543374706 Miami FL Card 3966
+8. Card Purchase 01/13 Groovys Pizza Grill Miami FL Card 3966
+9. Groovys Pizza Grill Miami
 
 Example output:
 1. Rica Rdo El Jau Hari Abdel
@@ -31,7 +35,10 @@ Example output:
 3. Transfer to CHK 7590
 4. WMT Plus Jeanette M
 5. Mazimport, Corp
-6. Nicolas Jose`;
+6. Nicolas Jose
+7. Shell Oil
+8. Groovys Pizza Grill
+9. Groovys Pizza Grill`;
 
 async function cleanWithGroq(descriptions, apiKey) {
   if (!apiKey || !descriptions.length) {

@@ -15,14 +15,15 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-04-05-checks-and-casing",
+  id: "2026-04-05-chase-card-purchase",
   label: "Fix",
   date: "Apr 5, 2026",
-  title: "Check transactions extracted and merchant names consistently cased",
+  title: "Chase card purchases now show clean merchant names",
   items: [
-    "Check transactions from the \"Checks\" section of Bank of America statements are now correctly extracted — previously the two-column check layout caused them to be silently skipped.",
-    "Merchant names are now normalized to Title Case consistently across all months, whether or not AI cleaning is active — previously names like \"IKEA\" could appear in different cases depending on the batch.",
-    "BofA credit card statements fully supported: all transaction types (purchases, payments, cash advances, statement credits) are extracted with correct signs.",
+    "Fixed Chase bank statements: \"Card Purchase 01/05 Shell Oil 57543374706 Miami FL Card 3966\" now becomes \"Shell Oil\" — bank prefixes, dates, location, and card numbers are stripped automatically.",
+    "ATM withdrawals from Chase statements are labeled \"ATM Withdrawal\" instead of showing the full address.",
+    "Merchant names are now normalized to Title Case consistently across all months, whether or not AI cleaning is active.",
+    "Check transactions from the Bank of America \"Checks\" section are now correctly extracted.",
   ],
 };
 
