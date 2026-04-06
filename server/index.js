@@ -5,7 +5,7 @@ const multer = require("multer");
 const dayjs = require("dayjs");
 const customParseFormat = require("dayjs/plugin/customParseFormat");
 const { extractTransactionsFromPdf, PdfParseError } = require("./pdfParser");
-const { cleanAndNormalizeTransaction } = require("./transactionCleaner");
+const { cleanAndNormalizeTransaction, normalizeCasing } = require("./transactionCleaner");
 const { buildWorkbookBuffer } = require("./excelBuilder");
 const { cleanWithGroq } = require("./groqCleaner");
 
@@ -149,7 +149,7 @@ app.post("/process", upload.array("pdfs"), async (req, res) => {
       const descriptions = cleanedRows.map((r) => r.clean);
       const aiCleaned = await cleanWithGroq(descriptions, groqApiKey);
       for (let i = 0; i < cleanedRows.length; i++) {
-        cleanedRows[i].clean = aiCleaned[i] || cleanedRows[i].clean;
+        cleanedRows[i].clean = normalizeCasing(aiCleaned[i]) || cleanedRows[i].clean;
       }
     } catch (error) {
       // eslint-disable-next-line no-console

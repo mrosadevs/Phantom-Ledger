@@ -15,14 +15,14 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-04-03-bofa-credit-card-signs",
+  id: "2026-04-05-checks-and-casing",
   label: "Fix",
-  date: "Apr 3, 2026",
-  title: "Bank of America credit card statements fully supported",
+  date: "Apr 5, 2026",
+  title: "Check transactions extracted and merchant names consistently cased",
   items: [
-    "Fixed parsing of BofA credit card PDFs — all transactions (purchases, payments, cash advances, and statement credits) are now extracted correctly.",
-    "Fixed transaction signs: purchases are debits, payments and statement credits are correctly positive — previously all transactions came through as negative.",
-    "BofA credit card PDFs render the \"-\" sign as a separate text element next to the amount; the parser now handles this correctly and applies the right sign based on which section the transaction belongs to.",
+    "Check transactions from the \"Checks\" section of Bank of America statements are now correctly extracted — previously the two-column check layout caused them to be silently skipped.",
+    "Merchant names are now normalized to Title Case consistently across all months, whether or not AI cleaning is active — previously names like \"IKEA\" could appear in different cases depending on the batch.",
+    "BofA credit card statements fully supported: all transaction types (purchases, payments, cash advances, statement credits) are extracted with correct signs.",
   ],
 };
 

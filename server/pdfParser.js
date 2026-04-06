@@ -21,7 +21,7 @@ const FOOTER_PATTERNS = [
   /beginning balance/i,
   /account summary/i,
   /daily balance/i,
-  /total (?:debits|credits|fees|withdrawals|deposits|payments)/i,
+  /total (?:debits|credits|fees|withdrawals|deposits|payments|checks)/i,
   /page\s+\d+(?:\s+of\s+\d+)?/i,
   /continued on (?:the )?next page/i,
   /member fdic/i,
@@ -227,6 +227,9 @@ function parsePageTransactions(lines, context) {
   // we want for accounting output, so we always apply sectionSign rather than
   // trusting the explicit sign on the amount token.
   let inCreditCardSection = false;
+  // True while inside a BofA bank statement "Checks" section.  In that
+  // context each line may contain one or two check entries side-by-side.
+  let inChecksSection = false;
   // Seed boolean flags from the previous page so continuation pages without
   // column headers still know whether a balance column is present.
   let headerHints = createHeaderHints();
@@ -244,6 +247,7 @@ function parsePageTransactions(lines, context) {
       }
       capture = true;
       inCreditCardSection = false;
+      inChecksSection = false;
       headerHints = mergeHeaderHints(headerHints, inferHeaderHints(line));
       if (pending) {
         pushPendingRow(rows, pending);
@@ -254,6 +258,7 @@ function parsePageTransactions(lines, context) {
 
     if (isFooterLine(lower)) {
       capture = false;
+      inChecksSection = false;
       if (pending) {
         pushPendingRow(rows, pending);
         pending = null;
@@ -270,6 +275,20 @@ function parsePageTransactions(lines, context) {
       }
       capture = true;
       inCreditCardSection = true;
+      inChecksSection = false;
+      if (pending) {
+        pushPendingRow(rows, pending);
+        pending = null;
+      }
+      continue;
+    }
+
+    // BofA bank statement "Checks" section — may have two check entries per line.
+    if (isChecksSectionLabel(lower)) {
+      sectionSign = -1;
+      capture = true;
+      inChecksSection = true;
+      inCreditCardSection = false;
       if (pending) {
         pushPendingRow(rows, pending);
         pending = null;
@@ -284,6 +303,21 @@ function parsePageTransactions(lines, context) {
       && hasAmount
       && dateCount === 1
       && !isLikelySummaryLine(text);
+
+    // Checks section: one or two check entries per line — use dedicated parser.
+    if (inChecksSection && capture) {
+      const checkTxns = parseChecksLine(line, context);
+      if (checkTxns.length > 0) {
+        if (pending) {
+          pushPendingRow(rows, pending);
+          pending = null;
+        }
+        for (const txn of checkTxns) {
+          rows.push(txn);
+        }
+        continue;
+      }
+    }
 
     if (dateToken && (capture || canUseFallbackWithoutHeader)) {
       if (pending) {
@@ -763,6 +797,45 @@ function isCreditCardSectionLabel(lowerText) {
   return compact === "purchasesandothercharges"
     || compact === "paymentsandothercredits"
     || compact === "cashadvances";
+}
+
+// BofA bank statements list checks in a separate two-column "Checks" section
+// that appears after "Withdrawals and Other Debits" and is terminated by
+// "Total checks".  The section header is the standalone word "Checks".
+function isChecksSectionLabel(lowerText) {
+  return compactLetters(lowerText) === "checks";
+}
+
+// Parse one or two check entries from a BofA "Checks" section line.
+// Each entry has the form: MM/DD/YY  NNNN  amount
+// Two entries may appear side-by-side on a single line (two-column layout).
+function parseChecksLine(line, context) {
+  const text = normalizeSpaces(line.text);
+  // Match date + 4-6 digit check number + amount (with optional commas/decimal)
+  const CHECK_RE = /(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\s+(\d{4,6})\s+([\d,]+(?:\.\d{2})?)/g;
+  const results = [];
+  let match;
+
+  while ((match = CHECK_RE.exec(text)) !== null) {
+    const [, rawDate, checkNum, rawAmt] = match;
+    const normalizedDate = normalizeDate(rawDate, context?.dateContext);
+    if (!normalizedDate) {
+      continue;
+    }
+    const amount = parseFloat(rawAmt.replace(/,/g, ""));
+    if (!Number.isFinite(amount) || amount === 0) {
+      continue;
+    }
+    results.push({
+      date: normalizedDate.normalized,
+      dateValue: normalizedDate.value,
+      description: checkNum, // cleaned to "Check NNNN" by transactionCleaner
+      amount: -Math.abs(amount),
+      account: line.account || null
+    });
+  }
+
+  return results;
 }
 
 function detectAccountLabel(lineText) {
