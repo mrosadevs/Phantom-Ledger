@@ -489,14 +489,55 @@ function applyNormalizationMap(cleanName) {
   return cleanName;
 }
 
+// Known uppercase abbreviations to preserve when normalizing casing.
+const PRESERVE_UPPER = new Set([
+  "LLC", "INC", "CORP", "LTD", "LP", "PC", "NA", "USA", "US",
+  "FPL", "ATM", "ACH", "CHK", "CRD", "TV", "IT", "HR"
+]);
+
+// If a clean name is entirely uppercase (e.g. "E DOCS SOL2" from an ACH
+// description), convert it to Title Case so the same payee always appears
+// consistently regardless of which month it was processed in.
+// Already-mixed-case names (from Groq or explicit rules) are left untouched.
+function normalizeCasing(name) {
+  if (!name || typeof name !== "string") {
+    return name;
+  }
+
+  const s = name.trim();
+  const alpha = s.replace(/[^a-zA-Z]/g, "");
+  if (!alpha || alpha !== alpha.toUpperCase()) {
+    return s; // already mixed case — leave alone
+  }
+
+  // Convert to Title Case, preserving known abbreviations and short tokens
+  // (≤3 uppercase letters are treated as abbreviations, e.g. "CKP", "EE").
+  return s.replace(/\b\w[\w']*\b/g, (word) => {
+    if (word.includes("'")) {
+      // Possessives / contractions: "VERA'S" → "Vera's"
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    }
+
+    const upper = word.toUpperCase();
+    const isShortAbbrev = word.length <= 3 && word === upper;
+    if (PRESERVE_UPPER.has(upper) || isShortAbbrev) {
+      return upper;
+    }
+
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  });
+}
+
 function cleanAndNormalizeTransaction(memo) {
   const cleaned = cleanTransaction(memo);
-  return applyNormalizationMap(cleaned);
+  const normalized = applyNormalizationMap(cleaned);
+  return normalizeCasing(normalized);
 }
 
 module.exports = {
   cleanTransaction,
   normalizeMap,
   applyNormalizationMap,
+  normalizeCasing,
   cleanAndNormalizeTransaction
 };
