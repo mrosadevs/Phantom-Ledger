@@ -15,15 +15,15 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-04-05-chase-card-purchase",
+  id: "2026-04-07-check-regex-fix",
   label: "Fix",
-  date: "Apr 5, 2026",
-  title: "Chase card purchases now show clean merchant names",
+  date: "Apr 7, 2026",
+  title: "All BofA check transactions now extracted correctly",
   items: [
+    "Fixed check extraction for months with multiple checks: amounts written as \"-3,250.00\" and check numbers marked with \"*\" (gap in sequence) were not being matched — all checks are now captured.",
     "Fixed Chase bank statements: \"Card Purchase 01/05 Shell Oil 57543374706 Miami FL Card 3966\" now becomes \"Shell Oil\" — bank prefixes, dates, location, and card numbers are stripped automatically.",
     "ATM withdrawals from Chase statements are labeled \"ATM Withdrawal\" instead of showing the full address.",
-    "Merchant names are now normalized to Title Case consistently across all months, whether or not AI cleaning is active.",
-    "Check transactions from the Bank of America \"Checks\" section are now correctly extracted.",
+    "Merchant names are now normalized to Title Case consistently across all months.",
   ],
 };
 
