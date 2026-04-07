@@ -811,8 +811,9 @@ function isChecksSectionLabel(lowerText) {
 // Two entries may appear side-by-side on a single line (two-column layout).
 function parseChecksLine(line, context) {
   const text = normalizeSpaces(line.text);
-  // Match date + 4-6 digit check number + amount (with optional commas/decimal)
-  const CHECK_RE = /(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\s+(\d{4,6})\s+([\d,]+(?:\.\d{2})?)/g;
+  // Match date + 4-6 digit check number (optional trailing * for gap in sequence)
+  // + optional leading minus + amount (with optional commas/decimal)
+  const CHECK_RE = /(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\s+(\d{4,6})\*?\s+-?([\d,]+(?:\.\d{2})?)/g;
   const results = [];
   let match;
 
