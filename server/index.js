@@ -8,6 +8,7 @@ const { extractTransactionsFromPdf, PdfParseError } = require("./pdfParser");
 const { cleanAndNormalizeTransaction, normalizeCasing } = require("./transactionCleaner");
 const { buildWorkbookBuffer } = require("./excelBuilder");
 const { cleanWithGroq } = require("./groqCleaner");
+const { parseGeneralLedger, matchToGL } = require("./glParser");
 
 dayjs.extend(customParseFormat);
 
@@ -33,8 +34,9 @@ app.use(cors({
   ]
 }));
 
-app.post("/process", upload.array("pdfs"), async (req, res) => {
-  const files = (req.files || []).filter((file) => /\.pdf$/i.test(file.originalname));
+app.post("/process", upload.fields([{ name: "pdfs", maxCount: 60 }, { name: "gl", maxCount: 1 }]), async (req, res) => {
+  const files = (req.files?.["pdfs"] || []).filter((file) => /\.pdf$/i.test(file.originalname));
+  const glFile = req.files?.["gl"]?.[0] || null;
 
   if (!files.length) {
     return res.status(400).json({
@@ -154,6 +156,29 @@ app.post("/process", upload.array("pdfs"), async (req, res) => {
     } catch (error) {
       // eslint-disable-next-line no-console
       console.log(`[groq] AI cleaning failed, using rule-based fallback: ${error.message}`);
+    }
+  }
+
+  // Optional: match cleaned transactions against an uploaded General Ledger PDF
+  if (glFile) {
+    try {
+      // eslint-disable-next-line no-console
+      console.log(`[gl] Parsing general ledger: ${glFile.originalname}`);
+      const vendorMap = await parseGeneralLedger(glFile.buffer);
+      for (const row of cleanedRows) {
+        const match = matchToGL(row.clean, vendorMap);
+        if (match) {
+          const code = match.accountCode ? `${match.accountCode} - ` : "";
+          row.glAccount = `${code}${match.accountName}`;
+          row.glVendor = match.vendor;
+        }
+      }
+      const matchedCount = cleanedRows.filter((r) => r.glAccount).length;
+      // eslint-disable-next-line no-console
+      console.log(`[gl] Matched ${matchedCount}/${cleanedRows.length} transactions to GL accounts`);
+    } catch (glErr) {
+      // eslint-disable-next-line no-console
+      console.log(`[gl] GL parsing failed: ${glErr.message}`);
     }
   }
 

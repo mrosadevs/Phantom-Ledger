@@ -6,26 +6,48 @@ async function buildWorkbookBuffer(rows) {
     views: [{ state: "frozen", ySplit: 1 }]
   });
 
+  // Include GL columns only if at least one row was matched
+  const hasGL = rows.some((r) => r.glAccount);
+
   worksheet.columns = [
     { header: "Date", key: "date" },
     { header: "clean transactions", key: "clean" },
     { header: "amount", key: "amount" },
-    { header: "orginal transactons", key: "original" }
+    { header: "orginal transactons", key: "original" },
+    ...(hasGL ? [
+      { header: "GL Account", key: "glAccount" },
+      { header: "GL Vendor", key: "glVendor" },
+    ] : []),
   ];
 
   for (const row of rows) {
     const parsedDate = parseUsDate(row.date);
-    worksheet.addRow({
+    const dataRow = {
       date: parsedDate || row.date,
       clean: row.clean,
       amount: Number.isFinite(row.amount) ? row.amount : row.amountRaw,
-      original: row.original
-    });
+      original: row.original,
+    };
+    if (hasGL) {
+      dataRow.glAccount = row.glAccount || "";
+      dataRow.glVendor = row.glVendor || "";
+    }
+    worksheet.addRow(dataRow);
   }
 
-  worksheet.autoFilter = { from: "A1", to: "D1" };
+  const colCount = hasGL ? 6 : 4;
+  const lastCol = hasGL ? "F" : "D";
+  worksheet.autoFilter = { from: "A1", to: `${lastCol}1` };
   worksheet.getColumn(1).numFmt = "m/d/yyyy";
   worksheet.getColumn(3).numFmt = "0.##;-0.##";
+
+  // Light green fill for GL Account column header to signal it's auto-filled
+  if (hasGL) {
+    const glAccountHeader = worksheet.getRow(1).getCell(5);
+    glAccountHeader.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9EAD3" } };
+    const glVendorHeader = worksheet.getRow(1).getCell(6);
+    glVendorHeader.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9EAD3" } };
+  }
 
   worksheet.eachRow((excelRow, rowNumber) => {
     excelRow.font = {
@@ -39,7 +61,7 @@ async function buildWorkbookBuffer(rows) {
     };
   });
 
-  autosizeColumns(worksheet, 4);
+  autosizeColumns(worksheet, colCount);
 
   return workbook.xlsx.writeBuffer();
 }

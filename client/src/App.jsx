@@ -15,15 +15,15 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-04-07-check-regex-fix",
-  label: "Fix",
+  id: "2026-04-07-general-ledger",
+  label: "New",
   date: "Apr 7, 2026",
-  title: "All BofA check transactions now extracted correctly",
+  title: "General Ledger matching — auto-fill accounts and vendors",
   items: [
-    "Fixed check extraction for months with multiple checks: amounts written as \"-3,250.00\" and check numbers marked with \"*\" (gap in sequence) were not being matched — all checks are now captured.",
-    "Fixed Chase bank statements: \"Card Purchase 01/05 Shell Oil 57543374706 Miami FL Card 3966\" now becomes \"Shell Oil\" — bank prefixes, dates, location, and card numbers are stripped automatically.",
-    "ATM withdrawals from Chase statements are labeled \"ATM Withdrawal\" instead of showing the full address.",
-    "Merchant names are now normalized to Title Case consistently across all months.",
+    "New optional feature: upload your General Ledger PDF alongside your bank statements. Phantom Ledger will match each transaction to a vendor and account from your GL.",
+    "Matched transactions get two extra columns in the Excel output: \"GL Account\" (e.g. 6000 - Rent Expense) and \"GL Vendor\" (the name as it appears in your books), highlighted in green.",
+    "Works with QuickBooks Online GL exports and similar formats. Unmatched transactions are left blank — nothing is overwritten.",
+    "Also fixed: BofA check extraction now handles negative-sign amounts and asterisk-flagged check numbers (gap in sequence).",
   ],
 };
 
@@ -80,6 +80,7 @@ export default function App() {
 
   // Core state
   const [queueItems, setQueueItems] = useState([]);
+  const [glFile, setGlFile] = useState(null);
   const [status, setStatus] = useState("Upload one or more digital bank statement PDFs to begin.");
   const [statusError, setStatusError] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -231,6 +232,9 @@ export default function App() {
       for (const item of activeQueueItems) {
         formData.append("pdfs", item.file);
       }
+      if (glFile) {
+        formData.append("gl", glFile);
+      }
 
       const response = await fetch(`${API_BASE}/process`, {
         method: "POST",
@@ -338,6 +342,47 @@ export default function App() {
           Supports multiple text-based PDFs. No OCR required.
         </p>
         <p className={`status-text ${statusError ? "error" : ""}`}>{status}</p>
+      </section>
+
+      <section className="panel gl-panel">
+        <div className="gl-panel-header">
+          <h2>General Ledger <span className="gl-optional-badge">optional</span></h2>
+          <p className="gl-description">
+            Upload your GL export PDF to automatically match transactions to vendors and accounts.
+            Adds two extra columns to the Excel output.
+          </p>
+        </div>
+        {glFile ? (
+          <div className="gl-loaded">
+            <span className="gl-loaded-icon">📒</span>
+            <span className="gl-loaded-name">{glFile.name}</span>
+            <button
+              type="button"
+              className="gl-remove-btn"
+              disabled={isProcessing}
+              onClick={() => setGlFile(null)}
+              aria-label="Remove general ledger"
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <label className={`gl-drop-zone${isProcessing ? " gl-disabled" : ""}`}>
+            <span className="gl-drop-icon">📒</span>
+            <span className="gl-drop-text">Drop GL PDF here or <u>browse</u></span>
+            <input
+              type="file"
+              accept=".pdf,application/pdf"
+              hidden
+              disabled={isProcessing}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f && /\.pdf$/i.test(f.name)) setGlFile(f);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        )}
       </section>
 
       <FileQueue
