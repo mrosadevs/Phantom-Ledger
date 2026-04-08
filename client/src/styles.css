@@ -1931,3 +1931,120 @@ body::before {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--panel-border);
 }
+
+/* ══════════════════════════════════════════════════
+   GENERAL LEDGER PANEL
+   ══════════════════════════════════════════════════ */
+
+.gl-panel {
+  padding: 1.5rem 2rem;
+}
+
+.gl-panel-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.35rem;
+}
+
+.gl-optional-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  background: rgba(99, 179, 255, 0.12);
+  border: 1px solid rgba(99, 179, 255, 0.2);
+  border-radius: 4px;
+  padding: 2px 7px;
+  vertical-align: middle;
+}
+
+.gl-description {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+/* Drop zone for GL (compact, single file) */
+.gl-drop-zone {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1.25rem;
+  border: 1.5px dashed var(--panel-border);
+  border-radius: 10px;
+  cursor: pointer;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+  user-select: none;
+}
+
+.gl-drop-zone:hover:not(.gl-disabled) {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.06);
+  color: var(--text-main);
+}
+
+.gl-drop-zone.gl-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.gl-drop-icon {
+  font-size: 1.2rem;
+}
+
+.gl-drop-text u {
+  color: var(--accent-strong);
+}
+
+/* Loaded state */
+.gl-loaded {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  background: rgba(52, 211, 153, 0.08);
+  border: 1.5px solid rgba(52, 211, 153, 0.25);
+  font-size: 0.875rem;
+}
+
+.gl-loaded-icon {
+  font-size: 1.1rem;
+}
+
+.gl-loaded-name {
+  flex: 1;
+  color: var(--success);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gl-remove-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.gl-remove-btn:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.gl-remove-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
