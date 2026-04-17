@@ -15,13 +15,13 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-04-14-sign-fix",
-  label: "Fixed",
-  date: "Apr 14, 2026",
-  title: "Chase credit card signs corrected — charges now negative, credits positive",
+  id: "2026-04-17-wintrust",
+  label: "New",
+  date: "Apr 17, 2026",
+  title: "Added Wintrust bank support + Chase sign fix",
   items: [
-    "Fixed: Chase Sapphire Reserve (and other Chase credit card) statements now export with correct signs. Charges appear as negative amounts; payments and credits appear as positive.",
-    "Previously all amounts were exported as positive regardless of transaction type.",
+    "New: Wintrust bank statements (Entrepreneur Checking and similar) are now fully supported. Phantom Ledger correctly reads the \"Jan06\"-style dates and \"Subtractions / Additions\" column format used by Wintrust.",
+    "Fixed: Chase Sapphire Reserve (and other Chase credit card) statements now export with correct signs — charges are negative, payments and credits are positive.",
   ],
 };
 
