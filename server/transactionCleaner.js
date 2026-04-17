@@ -6,9 +6,17 @@ const normalizeMap = {
   "LEE COUNTY": "LEE COUNTY TAX COLLECTOR",
   "ATT* BILL": "AT&T",
   "ATT* BILL PAYMENT": "AT&T",
+  "ATT BILL": "AT&T",
+  "ATT BILL PAYMENT": "AT&T",
   "APPLE.COM/BILL": "APPLE.COM",
   "AMAZON MKTPL": "Amazon",
+  "AMAZON.COM": "Amazon",
+  "NETFLIX.COM": "Netflix",
   "NST THE HOME D": "THE HOME DEPOT",
+  "THE HOME DEPOT": "The Home Depot",
+  "WAL-MART": "Walmart",
+  "WAL MART": "Walmart",
+  "SAMS CLUB": "Sam's Club",
   "FPL DIRECT DEBIT": "FPL DIRECT"
 };
 
@@ -420,6 +428,57 @@ function cleanTransaction(memo) {
     }
   }
 
+  // RULE W2: Wintrust INTERNET/PHONE TRSFR (funds transfer between accounts)
+  // "FUNDS TRANSFER TO DEP" = debit (outgoing); "FUNDS TRANSFER FRM DEP" = credit (incoming)
+  // Check "TO DEP" first — debit strings also contain "FROM XFR#..." which would confuse a naive check.
+  if (/^INTERNET\/PHONE TRSFR\b/i.test(m)) {
+    if (/\bTO\s+DEP\b/i.test(m)) return "Funds Transfer Out";
+    if (/\bFRM\s+DEP\b|\bFROM\s+DEP\b/i.test(m)) return "Funds Transfer In";
+    return "Funds Transfer";
+  }
+
+  // RULE W1: Wintrust POS PURCHASE / MERCHANT PURCHASE / POS DEPOSIT
+  // Raw form after parsing:
+  //   "POS PURCHASE [POS|MERCHANT] PURCHASE TERMINAL <id> [NST] <merchant> <city> <ST><date> <time> <card>"
+  // We strip all the boilerplate and return just the merchant name.
+  if (/^(?:(?:POS|MERCHANT)\s+(?:PURCHASE|DEPOSIT)\s+)+TERMINAL\s/i.test(m)) {
+    // 1. Strip all leading type tokens ("POS PURCHASE", "MERCHANT PURCHASE", etc.) + terminal ID
+    let rest = m.replace(/^(?:(?:POS|MERCHANT)\s+(?:PURCHASE|DEPOSIT)\s+)+TERMINAL\s+\S+\s*/i, "");
+    // 2. Strip Wintrust "NST" retail aggregator prefix (not part of merchant name)
+    rest = rest.replace(/^NST\s+/i, "");
+    // 3. Strip Toast POS "TST*" prefix
+    rest = rest.replace(/^TST\*\s*/i, "");
+    // 4. Strip trailing masked card number: X's + 4 digits (e.g. "XXXXXXXXXXXX1029")
+    rest = rest.replace(/\s+X+\d{4}\s*$/i, "");
+    // 5. Strip trailing time (e.g. "11:52 AM", "12:00 AM")
+    rest = rest.replace(/\s+\d{1,2}:\d{2}\s*[AP]M\s*$/i, "");
+    // 6. Strip trailing date, with optional state code glued to it
+    //    e.g. "NAPLES FL 02-22-25" → strips "FL 02-22-25"; "NAPLES FL02-22-25" → strips "FL02-22-25"
+    rest = rest.replace(/\s+[A-Z]{0,2}\s*\d{2}-\d{2}-\d{2}\s*$/i, "");
+    // 7. Strip any remaining trailing state abbreviation (e.g. "NAPLES FL")
+    rest = rest.replace(/\s+[A-Z]{2}\s*$/, "");
+    // 8. Strip the single trailing city word FIRST so store numbers end up at the tail
+    //    (e.g. "THE HOME DEPOT 001 NAPLES" → "THE HOME DEPOT 001", not stripping "001")
+    rest = rest.replace(/\s+[A-Z]+\s*$/, "");
+    // 9. Strip short location words that may remain after the city strip
+    //    (e.g. "FT" from "FT MYERS", terminal tag "AI")
+    rest = rest.replace(/\s+(?:FT|ST|AI|MC)\s*$/i, "");
+    // 10. Strip machine/vending number + remaining city fragment (e.g. "78 HUNT" from "NAYAX VENDING 78 HUNT VALL")
+    rest = rest.replace(/\s+\d+\s+[A-Z]+\s*$/, "").trim();
+    // 11. Now strip trailing store/location numbers that are exposed after city removal
+    //    (e.g. "001", "#2261", "6311 78", "07627 1033")
+    rest = rest.replace(/(\s+#?\d+)+\s*$/, "");
+    // 11. Strip phone/extension numbers glued to domain names
+    //    (e.g. "NETFLIX.COM866-579-7172" → "NETFLIX.COM")
+    rest = rest.replace(/\d[\d-]{5,}\d/g, "").trim();
+    // 12. Strip attached order codes after "*" (e.g. "AMAZON.COM*Z57Y12CR2" → "AMAZON.COM")
+    //     Leave lone asterisks like "ATT*" intact so normalizeMap can match them.
+    rest = rest.replace(/\*\S+/g, "");
+    // 13. Strip trailing punctuation/dashes
+    rest = rest.replace(/[-\s]+$/, "");
+    return rest.trim() || m;
+  }
+
   // RULE A14: PURCHASE MMDD
   if (m.startsWith("PURCHASE ")) {
     let rest = m.replace(/^PURCHASE\s+\d{4}\s+/, "");
@@ -530,6 +589,9 @@ const PRESERVE_UPPER = new Set([
   "LLC", "INC", "CORP", "LTD", "LP", "PC", "NA", "USA", "US",
   "FPL", "ATM", "ACH", "CHK", "CRD", "TV", "IT", "HR"
 ]);
+// Common English words that are 3 letters — must NOT be treated as abbreviations
+// even though they are all-uppercase and short.
+const NOT_ABBREVIATIONS = new Set(["THE", "AND", "FOR", "NOT", "BUT", "ARE", "WAS", "HAS", "HAD", "ITS", "POS"]);
 
 // If a clean name is entirely uppercase (e.g. "E DOCS SOL2" from an ACH
 // description), convert it to Title Case so the same payee always appears
@@ -555,7 +617,7 @@ function normalizeCasing(name) {
     }
 
     const upper = word.toUpperCase();
-    const isShortAbbrev = word.length <= 3 && word === upper;
+    const isShortAbbrev = word.length <= 3 && word === upper && !NOT_ABBREVIATIONS.has(upper);
     if (PRESERVE_UPPER.has(upper) || isShortAbbrev) {
       return upper;
     }
