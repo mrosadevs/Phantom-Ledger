@@ -15,13 +15,15 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-04-17-wintrust",
+  id: "2026-04-17-wintrust-cleaning",
   label: "New",
   date: "Apr 17, 2026",
-  title: "Added Wintrust bank support + Chase sign fix",
+  title: "Wintrust support + smarter transaction cleaning",
   items: [
-    "New: Wintrust bank statements (Entrepreneur Checking and similar) are now fully supported. Phantom Ledger correctly reads the \"Jan06\"-style dates and \"Subtractions / Additions\" column format used by Wintrust.",
-    "Fixed: Chase Sapphire Reserve (and other Chase credit card) statements now export with correct signs — charges are negative, payments and credits are positive.",
+    "New: Wintrust bank statements (Entrepreneur Checking and similar) are now fully supported — dates, section headers, and embedded barcodes all handled correctly.",
+    "Improved: Wintrust transaction descriptions are now cleaned down to just the merchant name. \"POS Purchase POS Purchase Terminal 06259623 NST THE Home Depot 001 Naples FL...\" becomes \"The Home Depot\".",
+    "Improved: Common merchants auto-normalized — AT&T, Netflix, Walmart, Sam's Club, Amazon, and more are recognized and cleaned regardless of how they appear in the raw statement.",
+    "Fixed: Chase credit card statements now export with correct signs — charges negative, payments and credits positive.",
   ],
 };
 
