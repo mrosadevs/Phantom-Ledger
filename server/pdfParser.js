@@ -13,7 +13,9 @@ const DATE_PATTERNS = [
   /^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}/,
   /^\d{1,2}[/-]\d{1,2}(?![/-]\d)/,
   /^[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}/,
-  /^\d{8}/
+  /^\d{8}/,
+  // Wintrust and similar: "Jan06" or "Jan 06" (month abbreviation + day, no year)
+  /^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}\b/i
 ];
 const INLINE_DATE_PATTERN = /\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b/g;
 const FOOTER_PATTERNS = [
@@ -194,10 +196,15 @@ async function extractPageLines(page, pageNumber) {
 }
 
 function joinLineChunks(chunks) {
+  // Remove barcode-like chunks: 18+ consecutive uppercase letters with no spaces.
+  // These appear in Wintrust (and similar) PDFs as postal address barcodes that
+  // pdfjs groups onto the same line as transaction text.
+  const filteredChunks = chunks.filter((chunk) => !/^[A-Z]{18,}$/.test(chunk.str));
+
   let output = "";
   let previousRightEdge = null;
 
-  for (const chunk of chunks) {
+  for (const chunk of filteredChunks) {
     if (!chunk?.str) {
       continue;
     }
@@ -639,6 +646,21 @@ function normalizeDate(dateText, dateContext) {
     return null;
   }
 
+  // Handle "MonDD" or "Mon DD" (abbreviated month + day, no year) — e.g. "Jan06" or "Jan 06"
+  // Used by Wintrust and some other banks.
+  const shortMonthDayMatch = /^([A-Za-z]{3})\s*(\d{1,2})$/.exec(raw);
+  if (shortMonthDayMatch) {
+    const inferredDate = parseShortMonthDay(shortMonthDayMatch[1], Number(shortMonthDayMatch[2]), dateContext);
+    if (!inferredDate) {
+      return null;
+    }
+
+    return {
+      normalized: inferredDate.format("MM/DD/YYYY"),
+      value: inferredDate.valueOf()
+    };
+  }
+
   if (/^\d{1,2}[/-]\d{1,2}$/.test(raw)) {
     const inferredDate = parseDateWithoutYear(raw, dateContext);
     if (!inferredDate) {
@@ -746,11 +768,13 @@ function isHeaderLine(lowerText) {
     || compact.includes("description")
     || compact.includes("transactionhistory")
     || compact.includes("descripcion");
-  const hasAmount = /(amount|debit|credit|withdrawal|deposit|balance)/.test(lowerText)
+  const hasAmount = /(amount|debit|credit|withdrawal|deposit|balance|subtraction|addition)/.test(lowerText)
     || compact.includes("amount")
     || compact.includes("debit")
     || compact.includes("credit")
     || compact.includes("balance")
+    || compact.includes("subtraction")
+    || compact.includes("addition")
     || compact.includes("retiros")
     || compact.includes("dbitos")
     || compact.includes("debitos")
@@ -989,6 +1013,31 @@ function parseDateWithoutYear(rawDate, dateContext) {
   }
 
   const parsed = dayjs(`${month}/${day}/${year}`, "M/D/YYYY", true);
+  return parsed.isValid() ? parsed : null;
+}
+
+// Parse a short month abbreviation + day into a full date, inferring the year
+// from dateContext (e.g. "Jan" + 6 → 01/06/2025).
+function parseShortMonthDay(monthAbbr, day, dateContext) {
+  // Resolve month abbreviation to a month number (1–12)
+  const monthRef = dayjs(`${monthAbbr} 1 2000`, "MMM D YYYY", true);
+  if (!monthRef.isValid()) {
+    return null;
+  }
+
+  const monthNum = monthRef.month() + 1; // dayjs months are 0-indexed
+  let year = dateContext?.anchorYear || dayjs().year();
+
+  // Same cross-year adjustment logic as parseDateWithoutYear
+  if (dateContext?.anchorMonth) {
+    if (monthNum - dateContext.anchorMonth > 6) {
+      year -= 1;
+    } else if (dateContext.anchorMonth - monthNum > 6) {
+      year += 1;
+    }
+  }
+
+  const parsed = dayjs(`${monthNum}/${day}/${year}`, "M/D/YYYY", true);
   return parsed.isValid() ? parsed : null;
 }
 
