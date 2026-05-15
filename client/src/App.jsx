@@ -15,15 +15,15 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-04-17-wintrust-cleaning",
+  id: "2026-05-15-bofa-cc-signs",
   label: "New",
-  date: "Apr 17, 2026",
-  title: "Wintrust support + smarter transaction cleaning",
+  date: "May 15, 2026",
+  title: "BofA credit card sign fix + Wintrust support",
   items: [
+    "Fixed: Bank of America credit card statements (Purchases and Other Charges / Payments and Other Credits / Cash Advances sections) now export with correct signs — charges and fees are positive, payments and refunds are negative.",
     "New: Wintrust bank statements (Entrepreneur Checking and similar) are now fully supported — dates, section headers, and embedded barcodes all handled correctly.",
     "Improved: Wintrust transaction descriptions are now cleaned down to just the merchant name. \"POS Purchase POS Purchase Terminal 06259623 NST THE Home Depot 001 Naples FL...\" becomes \"The Home Depot\".",
     "Improved: Common merchants auto-normalized — AT&T, Netflix, Walmart, Sam's Club, Amazon, and more are recognized and cleaned regardless of how they appear in the raw statement.",
-    "Fixed: Chase credit card statements now export with correct signs — charges negative, payments and credits positive.",
   ],
 };
 

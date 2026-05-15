@@ -339,7 +339,11 @@ function parsePageTransactions(lines, context) {
 
     if (isContinuation) {
       pending.description = normalizeSpaces(`${pending.description} ${text}`);
-    } else {
+    } else if (!inCreditCardSection) {
+      // Don't re-infer section sign from body text while inside a BofA credit
+      // card section — the section label already set the correct sign and we
+      // don't want a transaction description that contains "fee" or "credit"
+      // to accidentally override it.
       const inferredSectionSign = inferSectionSign(text);
       if (inferredSectionSign !== null) {
         sectionSign = inferredSectionSign;
@@ -398,7 +402,7 @@ function parseTransactionLine(line, dateToken, headerHints, context, sectionSign
   // contexts, pass sectionSign=0 for explicit-sign tokens so only the
   // description check can flip the sign, not the section heuristic.
   const effectiveSectionSign = (amountResult.explicitSign && !inCreditCardSection) ? 0 : sectionSign;
-  finalAmount = applySectionSign(finalAmount, description, effectiveSectionSign);
+  finalAmount = applySectionSign(finalAmount, description, effectiveSectionSign, inCreditCardSection);
 
   description = sanitizeTransactionDescription(description, finalAmount);
   if (!description) {
@@ -1128,15 +1132,17 @@ function inferSectionSign(text) {
     return 1;
   }
 
-  // Bank of America credit card section labels
+  // Bank of America credit card section labels.
+  // Convention: charges (purchases, cash advances) → positive; payments/credits → negative.
+  // This matches how BofA CC statements present amounts (unsigned charges, CC balance increases).
   if (/^purchases and other charges$/i.test(normalized)) {
-    return -1;
-  }
-  if (/^payments and other credits$/i.test(normalized)) {
     return 1;
   }
-  if (/^cash advances$/i.test(normalized)) {
+  if (/^payments and other credits$/i.test(normalized)) {
     return -1;
+  }
+  if (/^cash advances$/i.test(normalized)) {
+    return 1;
   }
 
   if (!hasDepositKeyword && !hasDebitKeyword) {
@@ -1150,9 +1156,17 @@ function inferSectionSign(text) {
   return 1;
 }
 
-function applySectionSign(amount, description, sectionSign) {
+function applySectionSign(amount, description, sectionSign, inCreditCardSection = false) {
   if (!Number.isFinite(amount)) {
     return amount;
+  }
+
+  // Inside a BofA credit card section the section label already encodes the
+  // correct sign (charges → positive, payments → negative).  Suppress
+  // description-based overrides so that e.g. "AGENT FEE" in the Purchases
+  // section isn't forced negative by the "fee" keyword.
+  if (inCreditCardSection && sectionSign) {
+    return sectionSign < 0 ? -Math.abs(amount) : Math.abs(amount);
   }
 
   const normalizedDescription = normalizeSpaces(description).toLowerCase();
