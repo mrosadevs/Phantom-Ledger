@@ -46,7 +46,7 @@ class PdfParseError extends Error {
   }
 }
 
-async function extractTransactionsFromPdf(buffer, fileName) {
+async function extractTransactionsFromPdf(buffer, fileName, options = {}) {
   if (!buffer || !buffer.length) {
     throw new PdfParseError("EMPTY_FILE", "File is empty.");
   }
@@ -91,6 +91,15 @@ async function extractTransactionsFromPdf(buffer, fileName) {
 
   const dateContext = inferDateContext(pageCollection.flat());
 
+  const detectedAccountType = detectAccountType(pageCollection.flat());
+  const requestedAccountType =
+    options.accountType && options.accountType !== "auto" ? options.accountType : null;
+
+  // Document-level state that must survive page breaks: the active statement
+  // section (AMEX "Detail Continued" pages repeat no section heading), printed
+  // control totals, and beginning/ending balances for the validation gate.
+  const docState = createDocState(requestedAccountType || detectedAccountType || "bank");
+
   // Persist balance/debit-credit flags across pages so continuation pages
   // (which repeat no column headers) still use the correct amount column.
   let persistedHints = createHeaderHints();
@@ -107,7 +116,7 @@ async function extractTransactionsFromPdf(buffer, fileName) {
       line.account = currentAccount;
     }
 
-    const pageResult = parsePageTransactions(lines, { dateContext, persistedHints });
+    const pageResult = parsePageTransactions(lines, { dateContext, persistedHints, docState });
     if (!pageResult.rows.length && lines.length) {
       warnings.push(`Page ${pageNumber}: no transactions recognized.`);
     }
@@ -131,8 +140,20 @@ async function extractTransactionsFromPdf(buffer, fileName) {
   }
 
   const metadata = collectDocumentMetadata(pageCollection, parsedRows);
+  metadata.accountType = docState.accountType;
+  metadata.accountTypeDetected = detectedAccountType;
 
-  return { transactions: parsedRows, warnings, metadata };
+  const validation = buildValidation(parsedRows, docState, fileName);
+  warnings.push(...validation.warnings);
+
+  const reviewCount = parsedRows.filter((row) => row.flags && row.flags.includes("sign-review")).length;
+  if (reviewCount > 0) {
+    warnings.push(
+      `${reviewCount} transaction(s) flagged for sign review (description keywords disagree with statement structure).`
+    );
+  }
+
+  return { transactions: parsedRows, warnings, metadata, validation };
 }
 
 async function extractPageLines(page, pageNumber) {
@@ -228,33 +249,48 @@ function parsePageTransactions(lines, context) {
   const rows = [];
   let capture = false;
   let pending = null;
-  let sectionSign = 0;
-  // True while inside a BofA credit card section (Purchases / Payments / Cash
-  // Advances).  In that context the PDF's own sign convention differs from what
-  // we want for accounting output, so we always apply sectionSign rather than
-  // trusting the explicit sign on the amount token.
-  let inCreditCardSection = false;
-  // True while inside a BofA bank statement "Checks" section.  In that
-  // context each line may contain one or two check entries side-by-side.
-  let inChecksSection = false;
+  // Section state (name, sign, credit-card/checks mode) lives on docState so
+  // it survives page breaks — AMEX "Detail Continued" pages and BofA multi-page
+  // Checks sections repeat no section heading on continuation pages.
+  const docState = context?.docState || createDocState();
   // Seed boolean flags from the previous page so continuation pages without
   // column headers still know whether a balance column is present.
   let headerHints = createHeaderHints();
   if (context?.persistedHints?.hasBalance) headerHints.hasBalance = true;
   if (context?.persistedHints?.hasDebitCredit) headerHints.hasDebitCredit = true;
 
+  const setSection = (name, sign) => {
+    if (sign === 0) {
+      docState.currentSection = null;
+      return;
+    }
+    // "Deposits and other credits - continued" is the same section as
+    // "Deposits and other credits" — canonicalize so page-break continuation
+    // headings don't split one section's rows across two keys.
+    const canonical = normalizeSpaces(name).replace(/\s*[-–—]?\s*continued\s*$/i, "");
+    const compact = compactLetters(canonical);
+    docState.currentSection = { name: canonical, compact, sign };
+    docState.sectionsSeen.add(compact);
+  };
+
   for (const line of lines) {
     const text = normalizeSpaces(line.text);
     const lower = text.toLowerCase();
 
+    // Printed control totals ("Total deposits and other credits $…") and
+    // beginning/ending balances feed the validation gate.  They can appear on
+    // footer lines or standalone (e.g. AMEX "Total New Charges"), so check
+    // every line that doesn't open with a transaction date.
+    recordControlLine(text, lower, docState);
+
     if (isHeaderLine(lower)) {
-      const inferredSectionSign = inferSectionSign(text);
+      const inferredSectionSign = inferSectionSign(text, docState.accountType);
       if (inferredSectionSign !== null) {
-        sectionSign = inferredSectionSign;
+        setSection(text, inferredSectionSign);
       }
       capture = true;
-      inCreditCardSection = false;
-      inChecksSection = false;
+      docState.inCreditCardSection = false;
+      docState.inChecksSection = false;
       headerHints = mergeHeaderHints(headerHints, inferHeaderHints(line));
       if (pending) {
         pushPendingRow(rows, pending);
@@ -265,7 +301,7 @@ function parsePageTransactions(lines, context) {
 
     if (isFooterLine(lower)) {
       capture = false;
-      inChecksSection = false;
+      docState.inChecksSection = false;
       if (pending) {
         pushPendingRow(rows, pending);
         pending = null;
@@ -276,13 +312,13 @@ function parsePageTransactions(lines, context) {
     // Re-enable capture for BofA credit card section labels without touching
     // the column-position hints already set by the real column-header row.
     if (isCreditCardSectionLabel(lower)) {
-      const inferredSectionSign = inferSectionSign(text);
+      const inferredSectionSign = inferSectionSign(text, docState.accountType);
       if (inferredSectionSign !== null) {
-        sectionSign = inferredSectionSign;
+        setSection(text, inferredSectionSign);
       }
       capture = true;
-      inCreditCardSection = true;
-      inChecksSection = false;
+      docState.inCreditCardSection = true;
+      docState.inChecksSection = false;
       if (pending) {
         pushPendingRow(rows, pending);
         pending = null;
@@ -292,10 +328,10 @@ function parsePageTransactions(lines, context) {
 
     // BofA bank statement "Checks" section — may have two check entries per line.
     if (isChecksSectionLabel(lower)) {
-      sectionSign = -1;
+      setSection("Checks", -1);
       capture = true;
-      inChecksSection = true;
-      inCreditCardSection = false;
+      docState.inChecksSection = true;
+      docState.inCreditCardSection = false;
       if (pending) {
         pushPendingRow(rows, pending);
         pending = null;
@@ -312,7 +348,7 @@ function parsePageTransactions(lines, context) {
       && !isLikelySummaryLine(text);
 
     // Checks section: one or two check entries per line — use dedicated parser.
-    if (inChecksSection && capture) {
+    if (docState.inChecksSection && capture) {
       const checkTxns = parseChecksLine(line, context);
       if (checkTxns.length > 0) {
         if (pending) {
@@ -320,6 +356,8 @@ function parsePageTransactions(lines, context) {
           pending = null;
         }
         for (const txn of checkTxns) {
+          txn.section = "checks";
+          txn.sectionName = "Checks";
           rows.push(txn);
         }
         continue;
@@ -331,7 +369,7 @@ function parsePageTransactions(lines, context) {
         pushPendingRow(rows, pending);
       }
 
-      pending = parseTransactionLine(line, dateToken, headerHints, context, sectionSign, inCreditCardSection);
+      pending = parseTransactionLine(line, dateToken, headerHints, context, docState);
       continue;
     }
 
@@ -339,14 +377,15 @@ function parsePageTransactions(lines, context) {
 
     if (isContinuation) {
       pending.description = normalizeSpaces(`${pending.description} ${text}`);
-    } else if (!inCreditCardSection) {
-      // Don't re-infer section sign from body text while inside a BofA credit
-      // card section — the section label already set the correct sign and we
-      // don't want a transaction description that contains "fee" or "credit"
-      // to accidentally override it.
-      const inferredSectionSign = inferSectionSign(text);
-      if (inferredSectionSign !== null) {
-        sectionSign = inferredSectionSign;
+    } else if (!docState.inCreditCardSection) {
+      // A section heading is a short title line with no amounts and no date.
+      // Requiring that keeps Account Summary lines (which carry amounts) and
+      // transaction prose from re-arming or flipping the section sign.
+      if (text.length <= 70 && !hasAmount && !dateToken) {
+        const inferredSectionSign = inferSectionSign(text, docState.accountType);
+        if (inferredSectionSign !== null) {
+          setSection(text, inferredSectionSign);
+        }
       }
     }
   }
@@ -363,7 +402,19 @@ function parsePageTransactions(lines, context) {
   };
 }
 
-function parseTransactionLine(line, dateToken, headerHints, context, sectionSign, inCreditCardSection = false) {
+function createDocState(accountType = "bank") {
+  return {
+    accountType,
+    currentSection: null,
+    inCreditCardSection: false,
+    inChecksSection: false,
+    sectionsSeen: new Set(),
+    printedTotals: [],
+    balances: { beginning: null, ending: null }
+  };
+}
+
+function parseTransactionLine(line, dateToken, headerHints, context, docState) {
   const normalizedDate = normalizeDate(dateToken.raw, context?.dateContext);
   if (!normalizedDate) {
     return null;
@@ -394,23 +445,22 @@ function parseTransactionLine(line, dateToken, headerHints, context, sectionSign
     return null;
   }
 
-  let finalAmount = amountResult.amount;
-  // Always run applySectionSign so that strong description-based overrides
-  // (e.g. "payment from" → positive) fire even when the amount token carries
-  // its own sign.  For credit card sections the PDF's sign convention differs
-  // from accounting output, so always apply sectionSign there.  For all other
-  // contexts, pass sectionSign=0 for explicit-sign tokens so only the
-  // description check can flip the sign, not the section heuristic.
-  const effectiveSectionSign = (amountResult.explicitSign && !inCreditCardSection) ? 0 : sectionSign;
-  finalAmount = applySectionSign(finalAmount, description, effectiveSectionSign, inCreditCardSection);
+  const section = docState.currentSection;
+  const signResult = resolveAmountSign(amountResult.amount, description, {
+    sectionSign: section ? section.sign : 0,
+    explicitSign: amountResult.explicitSign,
+    inCreditCardSection: docState.inCreditCardSection
+  });
+  const finalAmount = signResult.amount;
 
   description = sanitizeTransactionDescription(description, finalAmount);
   if (!description) {
     return null;
   }
 
-  if (isNonTransactionDescription(description, finalAmount)) {
-    return null;
+  const flags = [...signResult.flags];
+  if (almostZero(finalAmount)) {
+    flags.push("zero-value");
   }
 
   return {
@@ -418,7 +468,10 @@ function parseTransactionLine(line, dateToken, headerHints, context, sectionSign
     dateValue: normalizedDate.value,
     description,
     amount: finalAmount,
-    account: line.account || null
+    account: line.account || null,
+    section: section ? section.compact : null,
+    sectionName: section ? section.name : null,
+    flags
   };
 }
 
@@ -432,7 +485,14 @@ function pushPendingRow(rows, row) {
     return;
   }
 
+  // Zero-value rows (fee waivers etc.) are kept but flagged, never silently
+  // dropped — dropping them makes row counts stop tying during reconciliation.
   if (isNonTransactionDescription(description, row.amount)) {
+    const flags = Array.isArray(row.flags) ? row.flags : [];
+    if (!flags.includes("zero-value")) {
+      flags.push("zero-value");
+    }
+    rows.push({ ...row, description, flags });
     return;
   }
 
@@ -1107,10 +1167,39 @@ function isLikelySummaryLine(text) {
   return /(daily balance|ending daily|balance summary|beginning balance|new balance|account summary)/i.test(text);
 }
 
-function inferSectionSign(text) {
+function inferSectionSign(text, accountType = "bank") {
   const normalized = normalizeSpaces(text).toLowerCase();
   if (!normalized || extractLeadingDate(normalized)) {
     return null;
+  }
+
+  // Bank of America credit card section labels.
+  // Convention: charges (purchases, cash advances) → positive; payments/credits → negative.
+  // This matches how BofA CC statements present amounts (unsigned charges, CC balance increases).
+  if (/^purchases and other charges$/i.test(normalized)) {
+    return 1;
+  }
+  if (/^payments and other credits$/i.test(normalized)) {
+    return -1;
+  }
+  if (/^cash advances$/i.test(normalized)) {
+    return 1;
+  }
+
+  // Credit card statements use the opposite convention from bank accounts:
+  // money out of the business (charges, fees, interest) is POSITIVE, money
+  // in / owed less (payments, credits) is NEGATIVE.  A "Late Payment Fee" on
+  // a card is a charge even though "fee" reads like a bank debit.
+  if (accountType === "credit_card") {
+    if (/payments? and (?:other )?credits?/i.test(normalized)) {
+      return -1;
+    }
+    if (/(new charges|purchases|cash advances)/i.test(normalized)) {
+      return 1;
+    }
+    if (/^fees\b|fees for this period|interest charged/i.test(normalized)) {
+      return 1;
+    }
   }
 
   const hasDepositKeyword = /(deposit|credit|addition|interest payment|interest earned)/i.test(normalized);
@@ -1132,19 +1221,6 @@ function inferSectionSign(text) {
     return 1;
   }
 
-  // Bank of America credit card section labels.
-  // Convention: charges (purchases, cash advances) → positive; payments/credits → negative.
-  // This matches how BofA CC statements present amounts (unsigned charges, CC balance increases).
-  if (/^purchases and other charges$/i.test(normalized)) {
-    return 1;
-  }
-  if (/^payments and other credits$/i.test(normalized)) {
-    return -1;
-  }
-  if (/^cash advances$/i.test(normalized)) {
-    return 1;
-  }
-
   if (!hasDepositKeyword && !hasDebitKeyword) {
     return null;
   }
@@ -1156,33 +1232,59 @@ function inferSectionSign(text) {
   return 1;
 }
 
-function applySectionSign(amount, description, sectionSign, inCreditCardSection = false) {
+/**
+ * Sign precedence (METHOD.md §7.2): the statement states the sign twice over —
+ * the section heading and, when present, an explicit sign on the amount token.
+ * Both are ground truth.  A description keyword is an inference and must NEVER
+ * override either; when it disagrees with the structure the row is flagged for
+ * review instead.  Keywords decide only when there is no structural evidence.
+ */
+function resolveAmountSign(amount, description, { sectionSign = 0, explicitSign = false, inCreditCardSection = false } = {}) {
+  const flags = [];
   if (!Number.isFinite(amount)) {
-    return amount;
-  }
-
-  // Inside a BofA credit card section the section label already encodes the
-  // correct sign (charges → positive, payments → negative).  Suppress
-  // description-based overrides so that e.g. "AGENT FEE" in the Purchases
-  // section isn't forced negative by the "fee" keyword.
-  if (inCreditCardSection && sectionSign) {
-    return sectionSign < 0 ? -Math.abs(amount) : Math.abs(amount);
+    return { amount, flags };
   }
 
   const normalizedDescription = normalizeSpaces(description).toLowerCase();
-  if (isStrongPositiveDescription(normalizedDescription)) {
-    return Math.abs(amount);
+  const keywordPositive = isStrongPositiveDescription(normalizedDescription);
+  const keywordNegative = isStrongNegativeDescription(normalizedDescription);
+  const keywordSign = keywordPositive === keywordNegative ? 0 : (keywordPositive ? 1 : -1);
+
+  // 1. BofA credit card sections: the PDF's token signs use a different
+  //    convention than accounting output — the section label is authoritative.
+  if (inCreditCardSection && sectionSign) {
+    return { amount: sectionSign < 0 ? -Math.abs(amount) : Math.abs(amount), flags };
   }
 
-  if (isStrongNegativeDescription(normalizedDescription)) {
-    return -Math.abs(amount);
+  // 2. Explicit sign on the token (leading -, parentheses, CR/DR) is ground truth.
+  if (explicitSign) {
+    if (keywordSign !== 0 && Math.sign(amount) !== 0 && keywordSign !== Math.sign(amount)) {
+      flags.push("sign-review");
+    }
+    return { amount, flags };
   }
 
-  if (!sectionSign) {
-    return amount;
+  // 3. Section structure wins over description prose.
+  if (sectionSign) {
+    if (keywordSign !== 0 && keywordSign !== sectionSign) {
+      flags.push("sign-review");
+    }
+    return { amount: sectionSign < 0 ? -Math.abs(amount) : Math.abs(amount), flags };
   }
 
-  return sectionSign < 0 ? -Math.abs(amount) : Math.abs(amount);
+  // 4. No structural evidence at all — keywords are the only signal left.
+  if (keywordPositive && keywordNegative) {
+    // Contradictory evidence (e.g. `Zelle payment to … for "Deposit"`):
+    // keep the natural sign and ask a human instead of letting rule
+    // ordering decide.
+    flags.push("sign-review");
+    return { amount, flags };
+  }
+  if (keywordSign !== 0) {
+    return { amount: keywordSign < 0 ? -Math.abs(amount) : Math.abs(amount), flags };
+  }
+
+  return { amount, flags };
 }
 
 function isStrongPositiveDescription(description) {
@@ -1337,7 +1439,11 @@ function collectBusinessNameCandidates(lines) {
 function detectStatementPeriod(lines) {
   const periodPatterns = [
     /\bstatement\s+period\s*[:\-]?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*(?:to|-|through|thru)\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i,
-    /\bfrom\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*(?:to|-|through|thru)\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i
+    /\bfrom\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*(?:to|-|through|thru)\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i,
+    // BofA style: "for November 1, 2025 to November 30, 2025"
+    /\b([A-Z][a-z]+\s+\d{1,2},\s+\d{4})\s+(?:to|through|thru)\s+([A-Z][a-z]+\s+\d{1,2},\s+\d{4})/,
+    // AMEX style: "Closing Date 01/03/26" (single date — period end only)
+    /\bclosing\s+date\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})()/i
   ];
 
   for (const line of lines) {
@@ -1353,6 +1459,14 @@ function detectStatementPeriod(lines) {
         return {
           start: start.normalized,
           end: end.normalized
+        };
+      }
+      // Single-date patterns (e.g. AMEX "Closing Date 01/03/26") only give
+      // the period end — still useful for duplicate/gap detection.
+      if (start && !match[2]) {
+        return {
+          start: null,
+          end: start.normalized
         };
       }
     }
@@ -1453,7 +1567,203 @@ function isPasswordError(error) {
   return /password/i.test(error?.message || "");
 }
 
+// ── Account type detection (METHOD.md §7.3) ─────────────────────────────────
+// Bank accounts and credit cards use opposite sign conventions, so the account
+// type is a first-class input to the parser instead of being sniffed from
+// individual section labels.  This detector only provides the default; the
+// caller can override via options.accountType.
+function detectAccountType(lines) {
+  let creditCardScore = 0;
+  let bankScore = 0;
+
+  for (const line of lines || []) {
+    const lower = normalizeSpaces(line.text || "").toLowerCase();
+    if (!lower) {
+      continue;
+    }
+    if (/(minimum payment due|payment due date|credit limit|cash advance|purchases and other charges|total new charges|american\s?express|closing date|interest charged|apr\b)/.test(lower)) {
+      creditCardScore += 1;
+    }
+    if (/(deposits and other credits|withdrawals and other debits|total checks|service fees|checking account|savings account|business checking)/.test(lower)) {
+      bankScore += 1;
+    }
+  }
+
+  if (creditCardScore >= 2 && creditCardScore > bankScore) {
+    return "credit_card";
+  }
+  if (bankScore > 0) {
+    return "bank";
+  }
+  return null;
+}
+
+// ── Validation gate (METHOD.md §7.1) ────────────────────────────────────────
+// Every statement carries its own control totals and a balance chain.  A
+// parser that does not reconcile against those numbers is guessing, so record
+// them during the parse and compare extracted sums against them to the cent.
+
+const TOTAL_LABEL_RELEVANT = /(deposit|withdrawal|check|fee|charge|credit|payment|interest|advance|debit)/i;
+const TOTAL_LABEL_IGNORED = /(\b(?:in|for)\s+20\d{2}\b|year[\s-]?to[\s-]?date|\bytd\b)/i;
+
+function recordControlLine(text, lower, docState) {
+  if (!docState || extractLeadingDate(text)) {
+    return;
+  }
+
+  const balanceMatch = lower.match(/^(beginning|ending|previous|new) balance\b/);
+  if (balanceMatch && !/daily/.test(lower)) {
+    const tokens = getAmountTokens(text);
+    if (tokens.length) {
+      const key = balanceMatch[1] === "beginning" || balanceMatch[1] === "previous" ? "beginning" : "ending";
+      const value = parseAmountToken(tokens[0]);
+      if (docState.balances[key] === null && Number.isFinite(value)) {
+        docState.balances[key] = value;
+      }
+    }
+    return;
+  }
+
+  if (!/^total\s+/i.test(text) || text.length > 90) {
+    return;
+  }
+
+  const tokens = getAmountTokens(text);
+  if (!tokens.length) {
+    return;
+  }
+
+  const label = normalizeSpaces(text.replace(/^total\s+/i, "").replace(TRAILING_AMOUNTS_REGEX, ""));
+  if (!label || !TOTAL_LABEL_RELEVANT.test(label) || TOTAL_LABEL_IGNORED.test(label)) {
+    return;
+  }
+
+  const amount = parseAmountToken(tokens[tokens.length - 1]);
+  if (!Number.isFinite(amount)) {
+    return;
+  }
+
+  const compact = compactLetters(label.replace(/for this period/i, ""));
+  const dedupeKey = `${compact}|${amount.toFixed(2)}`;
+  if (docState.printedTotals.some((entry) => entry.dedupeKey === dedupeKey)) {
+    return;
+  }
+
+  docState.printedTotals.push({
+    label: `Total ${label}`,
+    compact,
+    amount,
+    section: docState.currentSection ? docState.currentSection.compact : null,
+    dedupeKey
+  });
+}
+
+function buildValidation(rows, docState, fileName) {
+  const warnings = [];
+  const sectionChecks = [];
+  const sums = new Map();
+
+  for (const row of rows || []) {
+    if (!row || !row.section) {
+      continue;
+    }
+    sums.set(row.section, (sums.get(row.section) || 0) + row.amount);
+  }
+
+  for (const printed of docState.printedTotals) {
+    let key = null;
+    if (printed.section && (sums.has(printed.section) || docState.sectionsSeen.has(printed.section))) {
+      key = printed.section;
+    } else {
+      for (const seen of docState.sectionsSeen) {
+        if (seen === printed.compact || seen.includes(printed.compact) || printed.compact.includes(seen)) {
+          key = seen;
+          break;
+        }
+      }
+    }
+
+    if (!key) {
+      continue;
+    }
+
+    const extracted = sums.get(key) || 0;
+    const delta = Math.abs(Math.abs(extracted) - Math.abs(printed.amount));
+    const pass = delta <= 0.011;
+    sectionChecks.push({
+      section: key,
+      label: printed.label,
+      printed: printed.amount,
+      extracted: roundCents(extracted),
+      delta: roundCents(delta),
+      pass
+    });
+    if (!pass) {
+      warnings.push(
+        `Validation FAILED — ${printed.label}: extracted ${formatMoney(extracted)} vs printed ${formatMoney(printed.amount)} (off by ${formatMoney(delta)}).`
+      );
+    }
+  }
+
+  let balanceCheck = null;
+  const { beginning, ending } = docState.balances;
+  if (Number.isFinite(beginning) && Number.isFinite(ending)) {
+    const net = (rows || []).reduce((sum, row) => sum + (Number.isFinite(row.amount) ? row.amount : 0), 0);
+    const expectedNet = ending - beginning;
+    const delta = Math.abs(net - expectedNet);
+    const pass = delta <= 0.011;
+    balanceCheck = {
+      beginning: roundCents(beginning),
+      ending: roundCents(ending),
+      net: roundCents(net),
+      expectedNet: roundCents(expectedNet),
+      delta: roundCents(delta),
+      pass
+    };
+    if (!pass) {
+      warnings.push(
+        `Validation FAILED — balance chain: beginning ${formatMoney(beginning)} + extracted net ${formatMoney(net)} does not reach ending ${formatMoney(ending)} (off by ${formatMoney(delta)}).`
+      );
+    }
+  }
+
+  const checksRun = sectionChecks.length + (balanceCheck ? 1 : 0);
+  const passed = checksRun === 0
+    ? null
+    : sectionChecks.every((check) => check.pass) && (!balanceCheck || balanceCheck.pass);
+
+  if (checksRun === 0) {
+    warnings.push(
+      `No printed control totals recognized in ${fileName || "statement"} — extraction could not be validated against the statement's own arithmetic.`
+    );
+  }
+
+  return { sectionChecks, balanceCheck, checksRun, passed, warnings };
+}
+
+function roundCents(value) {
+  return Math.round(value * 100) / 100;
+}
+
+function formatMoney(value) {
+  const abs = Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${value < 0 ? "-" : ""}$${abs}`;
+}
+
 module.exports = {
   extractTransactionsFromPdf,
-  PdfParseError
+  PdfParseError,
+  // Exposed for unit tests — not part of the public parsing API.
+  __internal: {
+    resolveAmountSign,
+    inferSectionSign,
+    detectAccountType,
+    recordControlLine,
+    buildValidation,
+    createDocState,
+    parseAmountToken,
+    normalizeDate,
+    isStrongPositiveDescription,
+    isStrongNegativeDescription
+  }
 };

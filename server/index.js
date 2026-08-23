@@ -1,4 +1,5 @@
 const path = require("node:path");
+const crypto = require("node:crypto");
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
@@ -27,7 +28,8 @@ app.use(cors({
     "Content-Disposition",
     "X-Phantom-Summary",
     "X-Phantom-Warnings",
-    "X-Phantom-Preview"
+    "X-Phantom-Preview",
+    "X-Phantom-Files"
   ]
 }));
 
@@ -42,20 +44,28 @@ app.post("/process", upload.array("pdfs", 60), async (req, res) => {
     });
   }
 
+  const accountType = normalizeAccountTypeOption(req.body?.accountType);
+
   const rawRows = [];
   const parsedFileSummaries = [];
-  const suppressedParseErrors = [];
+  const parseErrors = [];
   let processedFiles = 0;
+
+  // Duplicate source detection (byte-identical uploads) — a January statement
+  // saved twice looks like a real month to the parser and emits phantom rows.
+  const duplicateFileWarnings = findDuplicateFileWarnings(files);
 
   for (const file of files) {
     try {
-      const parsed = await extractTransactionsFromPdf(file.buffer, file.originalname);
+      const parsed = await extractTransactionsFromPdf(file.buffer, file.originalname, { accountType });
       processedFiles += 1;
 
       parsedFileSummaries.push({
         fileName: file.originalname,
         transactions: parsed.transactions,
-        metadata: parsed.metadata || {}
+        metadata: parsed.metadata || {},
+        validation: parsed.validation || null,
+        warnings: parsed.warnings || []
       });
 
       rawRows.push(
@@ -66,25 +76,16 @@ app.post("/process", upload.array("pdfs", 60), async (req, res) => {
             : safeDateValue(row.date),
           description: String(row.description || "").trim(),
           amount: Number(row.amount),
+          flags: Array.isArray(row.flags) ? row.flags : [],
           sourceFile: file.originalname
         }))
       );
-
-      if (Array.isArray(parsed.warnings) && parsed.warnings.length > 0) {
-        // eslint-disable-next-line no-console
-        console.log(`[process] Suppressed parser warning(s) for ${file.originalname}: ${parsed.warnings.join(" | ")}`);
-      }
     } catch (error) {
-      suppressedParseErrors.push({
+      parseErrors.push({
         file: file.originalname,
         error: mapErrorMessage(error)
       });
     }
-  }
-
-  if (suppressedParseErrors.length > 0) {
-    // eslint-disable-next-line no-console
-    console.log(`[process] Suppressed parser file error(s): ${JSON.stringify(suppressedParseErrors)}`);
   }
 
   rawRows.sort((a, b) => a.dateValue - b.dateValue);
@@ -97,23 +98,33 @@ app.post("/process", upload.array("pdfs", 60), async (req, res) => {
       amount: row.amount,
       original: row.description,
       dateValue: row.dateValue,
+      flags: row.flags,
       sourceFile: row.sourceFile
     }));
 
-  const accountMismatchWarnings = findAccountMismatchWarnings(parsedFileSummaries);
+  const allWarnings = [
+    ...parseErrors.map((entry) => `${entry.file}: ${entry.error}`),
+    ...duplicateFileWarnings,
+    ...findStatementPeriodWarnings(parsedFileSummaries),
+    ...findAccountMismatchWarnings(parsedFileSummaries),
+    ...collectValidationWarnings(parsedFileSummaries)
+  ];
 
   const allAmounts = cleanedRows.map((r) => r.amount).filter(Number.isFinite);
+  const fileReports = parsedFileSummaries.map(buildFileReport);
   const summary = {
     totalFiles: files.length,
     processedFiles,
-    failedFiles: suppressedParseErrors.length,
+    failedFiles: parseErrors.length,
     totalTransactions: cleanedRows.length,
     dateRange: buildDateRange(cleanedRows),
     totalCredits: allAmounts.filter((a) => a > 0).reduce((s, a) => s + a, 0),
     totalDebits: allAmounts.filter((a) => a < 0).reduce((s, a) => s + a, 0),
     net: allAmounts.reduce((s, a) => s + a, 0),
     creditCount: allAmounts.filter((a) => a > 0).length,
-    debitCount: allAmounts.filter((a) => a < 0).length
+    debitCount: allAmounts.filter((a) => a < 0).length,
+    reviewCount: cleanedRows.filter((r) => r.flags.includes("sign-review")).length,
+    validationPassed: summarizeValidation(fileReports)
   };
   const downloadFileName = deriveDownloadFileName(parsedFileSummaries, files);
 
@@ -121,11 +132,11 @@ app.post("/process", upload.array("pdfs", 60), async (req, res) => {
     return res.status(422).json({
       error: "No transactions were extracted from the uploaded PDFs.",
       summary,
-      warnings: accountMismatchWarnings
+      warnings: allWarnings
     });
   }
 
-  const workbookBuffer = await buildWorkbookBuffer(cleanedRows);
+  const workbookBuffer = await buildWorkbookBuffer(cleanedRows, fileReports);
 
   res.setHeader(
     "Content-Type",
@@ -133,8 +144,9 @@ app.post("/process", upload.array("pdfs", 60), async (req, res) => {
   );
   res.setHeader("Content-Disposition", `attachment; filename="${downloadFileName}"`);
   setEncodedHeader(res, "X-Phantom-Summary", summary);
-  setEncodedHeader(res, "X-Phantom-Warnings", accountMismatchWarnings);
+  setEncodedHeader(res, "X-Phantom-Warnings", allWarnings);
   setEncodedHeader(res, "X-Phantom-Preview", buildPreviewTransactions(cleanedRows, 30));
+  setEncodedHeader(res, "X-Phantom-Files", fileReports);
 
   return res.send(Buffer.from(workbookBuffer));
 });
@@ -176,6 +188,133 @@ app.listen(port, () => {
   // eslint-disable-next-line no-console
   console.log(`Accuracy Phantom Ledger server running on http://localhost:${port}`);
 });
+
+function normalizeAccountTypeOption(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "credit_card" || normalized === "creditcard" || normalized === "credit-card") {
+    return "credit_card";
+  }
+  if (normalized === "bank") {
+    return "bank";
+  }
+  return "auto";
+}
+
+// METHOD.md §7.4 — hash the input files and warn on byte-identical uploads.
+function findDuplicateFileWarnings(files) {
+  const byHash = new Map();
+  for (const file of files) {
+    const hash = crypto.createHash("sha256").update(file.buffer).digest("hex");
+    if (byHash.has(hash)) {
+      byHash.get(hash).push(file.originalname);
+    } else {
+      byHash.set(hash, [file.originalname]);
+    }
+  }
+
+  const warnings = [];
+  for (const names of byHash.values()) {
+    if (names.length > 1) {
+      warnings.push(
+        `Duplicate upload detected: ${names.join(" and ")} are byte-identical — the same statement was uploaded ${names.length} times (its transactions would otherwise be double-counted, and the month it displaced is missing).`
+      );
+    }
+  }
+  return warnings;
+}
+
+// METHOD.md §7.4 — warn on duplicate statement periods and gaps in the
+// monthly sequence (a month saved twice usually means another month is missing).
+function findStatementPeriodWarnings(parsedFiles) {
+  const withPeriod = [];
+  for (const file of parsedFiles) {
+    const period = file?.metadata?.statementPeriod;
+    const endDate = period?.end ? dayjs(period.end, "MM/DD/YYYY", true) : null;
+    if (endDate && endDate.isValid()) {
+      withPeriod.push({ fileName: file.fileName, end: endDate });
+    }
+  }
+
+  if (withPeriod.length <= 1) {
+    return [];
+  }
+
+  const warnings = [];
+  const byMonth = new Map();
+  for (const entry of withPeriod) {
+    const key = entry.end.format("YYYY-MM");
+    if (!byMonth.has(key)) {
+      byMonth.set(key, []);
+    }
+    byMonth.get(key).push(entry.fileName);
+  }
+
+  for (const [month, names] of byMonth.entries()) {
+    if (names.length > 1) {
+      warnings.push(
+        `Statement period ${month} appears in ${names.length} files (${names.join(", ")}) — check for a duplicate download.`
+      );
+    }
+  }
+
+  const months = Array.from(byMonth.keys()).sort();
+  for (let i = 1; i < months.length; i += 1) {
+    const prev = dayjs(`${months[i - 1]}-01`, "YYYY-MM-DD", true);
+    const curr = dayjs(`${months[i]}-01`, "YYYY-MM-DD", true);
+    const gap = curr.diff(prev, "month");
+    if (gap > 1) {
+      const missing = [];
+      for (let step = 1; step < gap; step += 1) {
+        missing.push(prev.add(step, "month").format("YYYY-MM"));
+      }
+      warnings.push(
+        `Possible missing statement(s): no file covers ${missing.join(", ")} between ${months[i - 1]} and ${months[i]}.`
+      );
+    }
+  }
+
+  return warnings;
+}
+
+function collectValidationWarnings(parsedFiles) {
+  const warnings = [];
+  for (const file of parsedFiles) {
+    for (const warning of file.warnings || []) {
+      if (/^validation|^no printed control totals|flagged for sign review/i.test(warning)) {
+        warnings.push(`${file.fileName}: ${warning}`);
+      }
+    }
+  }
+  return warnings;
+}
+
+function buildFileReport(file) {
+  const validation = file.validation || null;
+  return {
+    fileName: file.fileName,
+    transactions: (file.transactions || []).length,
+    accountType: file.metadata?.accountType || "bank",
+    statementPeriod: file.metadata?.statementPeriod || null,
+    validation: validation
+      ? {
+        passed: validation.passed,
+        checksRun: validation.checksRun,
+        sectionChecks: validation.sectionChecks,
+        balanceCheck: validation.balanceCheck
+      }
+      : null
+  };
+}
+
+// true = every validated file tied to the cent; false = at least one failed;
+// null = nothing could be validated.
+function summarizeValidation(fileReports) {
+  const validated = fileReports.filter((f) => f.validation && f.validation.passed !== null);
+  if (!validated.length) {
+    return null;
+  }
+  return validated.every((f) => f.validation.passed === true);
+}
 
 function emptySummary(totalFiles) {
   return {
@@ -246,7 +385,8 @@ function buildPreviewTransactions(rows, maxRows) {
     date: row.date,
     amount: Number(row.amount),
     description: String(row.original || row.description || ""),
-    sourceFile: row.sourceFile || ""
+    sourceFile: row.sourceFile || "",
+    flags: Array.isArray(row.flags) ? row.flags : []
   }));
 }
 
