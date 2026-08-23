@@ -1931,3 +1931,286 @@ body::before {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--panel-border);
 }
+
+/* ══════════════════════════════════════════════════
+   VALIDATION GATE UI (v2)
+   ══════════════════════════════════════════════════ */
+
+.account-type-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  margin-top: var(--space-md);
+}
+
+.account-type-label {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.segmented-control {
+  display: inline-flex;
+  background: var(--surface-sunken);
+  border: 1px solid var(--panel-border-soft);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.segmented-control .segment {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background var(--duration-base) var(--ease), color var(--duration-base) var(--ease);
+}
+
+.segmented-control .segment:hover:not(:disabled) {
+  color: var(--text-main);
+}
+
+.segmented-control .segment.active {
+  background: var(--accent-gradient);
+  color: #fff;
+  box-shadow: 0 2px 10px var(--accent-glow);
+}
+
+.segmented-control .segment:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.account-type-hint {
+  font-size: var(--font-xs);
+  color: var(--text-dim);
+}
+
+.verification-card.pass p {
+  color: var(--success);
+}
+
+.verification-card.fail p {
+  color: var(--danger);
+}
+
+.verification-card.fail {
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.validation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.validation-item {
+  background: var(--surface-sunken);
+  border: 1px solid var(--panel-border-soft);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+
+.validation-item-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.validation-file {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  color: var(--text-main);
+  word-break: break-all;
+}
+
+.validation-badge {
+  font-size: var(--font-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.validation-badge.pass {
+  color: var(--success);
+  background: var(--success-soft);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.validation-badge.fail {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+}
+
+.validation-badge.unknown {
+  color: var(--text-muted);
+  background: rgba(123, 147, 184, 0.12);
+  border: 1px solid rgba(123, 147, 184, 0.25);
+}
+
+.validation-meta {
+  font-size: var(--font-xs);
+  color: var(--text-dim);
+  margin-left: auto;
+}
+
+.validation-fail-detail {
+  margin: 6px 0 0;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  color: var(--danger);
+}
+
+.flag-chip {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: var(--font-xs);
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 999px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.flag-chip.review {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
+.flag-chip.zero {
+  color: var(--text-muted);
+  background: rgba(123, 147, 184, 0.12);
+  border: 1px solid rgba(123, 147, 184, 0.25);
+}
+
+/* ══════════════════════════════════════════════════
+   V2 POLISH — sheen, premium borders, glass parity
+   ══════════════════════════════════════════════════ */
+
+/* Sheen sweep across primary buttons on hover */
+.button-primary::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.35) 50%, transparent 65%);
+  transform: translateX(-130%);
+  pointer-events: none;
+}
+
+.button-primary:hover:not(:disabled)::after {
+  transform: translateX(130%);
+  transition: transform 0.65s var(--ease-out);
+}
+
+/* Update card — slow animated gradient edge */
+.update-card {
+  position: relative;
+  background-clip: padding-box;
+}
+
+.update-card::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(120deg,
+    rgba(59, 130, 246, 0.55),
+    rgba(139, 92, 246, 0.4),
+    rgba(56, 189, 248, 0.45),
+    rgba(59, 130, 246, 0.55));
+  background-size: 300% 300%;
+  animation: title-gradient 8s ease infinite;
+  opacity: 0.5;
+}
+
+[data-theme="light"] .update-card::before {
+  opacity: 0.35;
+}
+
+/* Glass top-highlight line on panels (brand parity with Pulse) */
+.panel {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.07), transparent 2px), var(--panel-bg);
+  background-repeat: no-repeat;
+  background-size: 100% 2px, 100% 100%;
+}
+
+[data-theme="light"] .panel {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.9), transparent 2px), var(--panel-bg);
+}
+
+/* Verification summary card states get a heartbeat when they fail */
+.verification-card.fail {
+  animation: fail-attention 2.4s ease-in-out infinite;
+}
+
+@keyframes fail-attention {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
+  50%      { box-shadow: 0 0 22px -4px rgba(248, 113, 113, 0.45); }
+}
+
+/* Validation badges pop in */
+.validation-badge {
+  animation: badge-pop 320ms var(--ease-bounce) both;
+}
+
+@keyframes badge-pop {
+  0%   { transform: scale(0.6); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Flag chips shimmer faintly so review rows catch the eye */
+.flag-chip.review {
+  background-image: linear-gradient(105deg, transparent 40%, rgba(251, 191, 36, 0.18) 50%, transparent 60%), none;
+  background-size: 220% 100%;
+  animation: flag-shimmer 3s linear infinite;
+}
+
+@keyframes flag-shimmer {
+  0%   { background-position: 220% 0; }
+  100% { background-position: -120% 0; }
+}
+
+/* Segmented control — springy active pill */
+.segmented-control .segment {
+  transition: background var(--duration-base) var(--ease),
+              color var(--duration-base) var(--ease),
+              transform var(--duration-fast) var(--ease-bounce);
+}
+
+.segmented-control .segment.active {
+  transform: scale(1.04);
+}
+
+.segmented-control .segment:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+/* Respect reduced-motion for all v2 flourishes */
+@media (prefers-reduced-motion: reduce) {
+  .button-primary::after,
+  .update-card::before,
+  .verification-card.fail,
+  .flag-chip.review,
+  .validation-badge {
+    animation: none !important;
+    transition: none !important;
+  }
+}

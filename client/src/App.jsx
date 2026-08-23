@@ -15,17 +15,24 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-05-15-bofa-cc-signs",
+  id: "2026-08-20-validation-gate",
   label: "New",
-  date: "May 15, 2026",
-  title: "BofA credit card sign fix + Wintrust support",
+  date: "August 20, 2026",
+  title: "Validation gate, sign fixes, duplicate detection",
   items: [
-    "Fixed: Bank of America credit card statements (Purchases and Other Charges / Payments and Other Credits / Cash Advances sections) now export with correct signs — charges and fees are positive, payments and refunds are negative.",
-    "New: Wintrust bank statements (Entrepreneur Checking and similar) are now fully supported — dates, section headers, and embedded barcodes all handled correctly.",
-    "Improved: Wintrust transaction descriptions are now cleaned down to just the merchant name. \"POS Purchase POS Purchase Terminal 06259623 NST THE Home Depot 001 Naples FL...\" becomes \"The Home Depot\".",
-    "Improved: Common merchants auto-normalized — AT&T, Netflix, Walmart, Sam's Club, Amazon, and more are recognized and cleaned regardless of how they appear in the raw statement.",
+    "New: Every statement is now verified against its own printed totals and balance chain — each file gets a pass/fail check, and a Validation sheet is included in the Excel export. A silently wrong export can no longer look like a correct one.",
+    "Fixed: Transaction signs now come from statement structure (section headings and explicit minus signs), never from description keywords. Payees like \"BARCLAYCARD\" or memos like \"Deposit\" no longer flip withdrawals into deposits.",
+    "New: Bank vs. credit card sign conventions are handled explicitly — a Late Payment Fee on a card is a charge (positive), and you can override auto-detection per batch.",
+    "New: Duplicate uploads (byte-identical PDFs), repeated statement periods, and gaps in the month sequence are detected and reported.",
+    "Improved: $0.00 rows (fee waivers) are kept and flagged instead of silently dropped, so row counts tie during reconciliation.",
   ],
 };
+
+const ACCOUNT_TYPE_OPTIONS = [
+  { value: "auto", label: "Auto-detect" },
+  { value: "bank", label: "Bank" },
+  { value: "credit_card", label: "Credit card" },
+];
 
 function fileKey(file) {
   return `${file.name}::${file.size}::${file.lastModified}`;
@@ -80,6 +87,7 @@ export default function App() {
 
   // Core state
   const [queueItems, setQueueItems] = useState([]);
+  const [accountType, setAccountType] = useState("auto");
   const [status, setStatus] = useState("Upload one or more digital bank statement PDFs to begin.");
   const [statusError, setStatusError] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -231,6 +239,7 @@ export default function App() {
       for (const item of activeQueueItems) {
         formData.append("pdfs", item.file);
       }
+      formData.append("accountType", accountType);
       const response = await fetch(`${API_BASE}/process`, {
         method: "POST",
         body: formData,
@@ -244,6 +253,7 @@ export default function App() {
       const summary = decodeHeaderJson(response.headers.get("x-phantom-summary"), null);
       const warnings = decodeHeaderJson(response.headers.get("x-phantom-warnings"), []);
       const previewTransactions = decodeHeaderJson(response.headers.get("x-phantom-preview"), []);
+      const fileReports = decodeHeaderJson(response.headers.get("x-phantom-files"), []);
       const workbookBlob = await response.blob();
       const downloadFileName = extractFilename(response.headers.get("content-disposition"));
 
@@ -253,6 +263,7 @@ export default function App() {
         summary,
         warnings: Array.isArray(warnings) ? warnings : [],
         previewTransactions: Array.isArray(previewTransactions) ? previewTransactions : [],
+        fileReports: Array.isArray(fileReports) ? fileReports : [],
         workbookBlob,
         downloadFileName,
       });
@@ -278,7 +289,7 @@ export default function App() {
       stopProgressSimulation();
       setIsProcessing(false);
     }
-  }, [activeQueueItems, isProcessing]);
+  }, [activeQueueItems, isProcessing, accountType]);
 
   const handleDownload = useCallback(() => {
     if (!result?.workbookBlob) return;
@@ -336,6 +347,31 @@ export default function App() {
         <p className="drop-hint upload-subtext">
           Supports multiple text-based PDFs. No OCR required.
         </p>
+        <div className="account-type-row">
+          <span className="account-type-label">Statement type</span>
+          <div className="segmented-control" role="radiogroup" aria-label="Statement type">
+            {ACCOUNT_TYPE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={accountType === option.value}
+                className={`segment ${accountType === option.value ? "active" : ""}`}
+                disabled={isProcessing}
+                onClick={() => setAccountType(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <span className="account-type-hint">
+            {accountType === "credit_card"
+              ? "Charges export positive, payments negative."
+              : accountType === "bank"
+                ? "Deposits export positive, withdrawals negative."
+                : "Detected per statement; override if a card is misread as a bank account."}
+          </span>
+        </div>
         <p className={`status-text ${statusError ? "error" : ""}`}>{status}</p>
       </section>
 

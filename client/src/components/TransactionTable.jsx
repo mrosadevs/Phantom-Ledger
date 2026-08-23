@@ -158,6 +158,12 @@ export default function TransactionTable({ transactions }) {
                       >
                         {row.description}
                       </span>
+                      {Array.isArray(row.flags) && row.flags.includes("sign-review") ? (
+                        <span className="flag-chip review" title="Description keywords disagree with the statement's structure — verify the sign.">review sign</span>
+                      ) : null}
+                      {Array.isArray(row.flags) && row.flags.includes("zero-value") ? (
+                        <span className="flag-chip zero" title="Zero-value row (e.g. fee waiver) kept so row counts tie.">$0</span>
+                      ) : null}
                     </td>
                     <td className="source-file">{row.sourceFile}</td>
                     <td>
