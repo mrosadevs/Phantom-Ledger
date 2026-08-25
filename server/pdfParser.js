@@ -271,11 +271,16 @@ function parsePageTransactions(lines, context) {
     const compact = compactLetters(canonical);
     docState.currentSection = { name: canonical, compact, sign };
     docState.sectionsSeen.add(compact);
+    docState.inSummaryBlock = false;
   };
 
   for (const line of lines) {
     const text = normalizeSpaces(line.text);
     const lower = text.toLowerCase();
+
+    if (isDocumentArtifactLine(text)) {
+      continue;
+    }
 
     // Printed control totals ("Total deposits and other credits $…") and
     // beginning/ending balances feed the validation gate.  They can appear on
@@ -291,6 +296,7 @@ function parsePageTransactions(lines, context) {
       capture = true;
       docState.inCreditCardSection = false;
       docState.inChecksSection = false;
+      docState.inSummaryBlock = false;
       headerHints = mergeHeaderHints(headerHints, inferHeaderHints(line));
       if (pending) {
         pushPendingRow(rows, pending);
@@ -365,6 +371,8 @@ function parsePageTransactions(lines, context) {
     }
 
     if (dateToken && (capture || canUseFallbackWithoutHeader)) {
+      // Real rows are flowing again, so any rollup block has ended.
+      docState.inSummaryBlock = false;
       if (pending) {
         pushPendingRow(rows, pending);
       }
@@ -382,9 +390,17 @@ function parsePageTransactions(lines, context) {
       // Requiring that keeps Account Summary lines (which carry amounts) and
       // transaction prose from re-arming or flipping the section sign.
       if (text.length <= 70 && !hasAmount && !dateToken) {
-        const inferredSectionSign = inferSectionSign(text, docState.accountType);
-        if (inferredSectionSign !== null) {
-          setSection(text, inferredSectionSign);
+        if (isSummaryBlockHeading(text)) {
+          // A rollup block ("ATM & Debit Card Summary") owns no rows — it
+          // restates amounts already listed in the real sections, sliced a
+          // different way.  Leave the current section alone and stop
+          // recording control totals until a real section resumes.
+          docState.inSummaryBlock = true;
+        } else {
+          const inferredSectionSign = inferSectionSign(text, docState.accountType);
+          if (inferredSectionSign !== null) {
+            setSection(text, inferredSectionSign);
+          }
         }
       }
     }
@@ -409,6 +425,7 @@ function createDocState(accountType = "bank") {
     inCreditCardSection: false,
     inChecksSection: false,
     sectionsSeen: new Set(),
+    inSummaryBlock: false,
     printedTotals: [],
     balances: { beginning: null, ending: null }
   };
@@ -748,6 +765,10 @@ function normalizeDate(dateText, dateContext) {
     "M-D-YY",
     "MMM D, YYYY",
     "MMMM D, YYYY",
+    // dayjs strict mode rejects a zero-padded day for the D token, so
+    // "January 01, 2026" needs the DD variants that "January 30, 2026" doesn't.
+    "MMM DD, YYYY",
+    "MMMM DD, YYYY",
     "YYYYMMDD"
   ], true);
 
@@ -868,6 +889,25 @@ function isHeaderLine(lowerText) {
   }
 
   return false;
+}
+
+// Statements carry rollup blocks that restate activity already listed in the
+// transaction sections — Chase prints "ATM & Debit Card Summary" / "ATM &
+// Debit Card Totals" with per-card subtotals whose money lives in Deposits and
+// Additions and ATM & Debit Card Withdrawals.  Such a block owns no rows, so
+// letting it register as a section leaves an empty bucket that its own printed
+// totals then fail against.
+function isSummaryBlockHeading(text) {
+  return /(?:summary|totals)$/.test(compactLetters(text));
+}
+
+// Chase embeds machine-readable artifacts in the text layer that render
+// invisibly: "*start*deposits and additions" / "*end*..." section markers and
+// bare 15+ digit barcodes.  Both otherwise read as section headings (the
+// markers carry section keywords) or as YYYYMMDD dates (the barcodes), which
+// corrupts section state and the rollup-block guard.
+function isDocumentArtifactLine(text) {
+  return /^\*(?:start|end)\*/i.test(text) || /^\d{15,}$/.test(text);
 }
 
 function isFooterLine(lowerText) {
@@ -1266,7 +1306,10 @@ function resolveAmountSign(amount, description, { sectionSign = 0, explicitSign 
 
   // 3. Section structure wins over description prose.
   if (sectionSign) {
-    if (keywordSign !== 0 && keywordSign !== sectionSign) {
+    const serviceNameKeyword = sectionSign < 0
+      && keywordSign > 0
+      && FEE_SERVICE_DESCRIPTION_PATTERN.test(normalizedDescription);
+    if (keywordSign !== 0 && keywordSign !== sectionSign && !serviceNameKeyword) {
       flags.push("sign-review");
     }
     return { amount: sectionSign < 0 ? -Math.abs(amount) : Math.abs(amount), flags };
@@ -1286,6 +1329,11 @@ function resolveAmountSign(amount, description, { sectionSign = 0, explicitSign 
 
   return { amount, flags };
 }
+
+// Cash-handling services that banks bill as fees ("Cash Deposit Night Drop
+// Armored").  "Deposit" here names the service being charged for, not money
+// arriving, so it must not be read as contradicting a negative fee section.
+const FEE_SERVICE_DESCRIPTION_PATTERN = /(night\s*drop|armored|cash\s+handling|coin\s*(?:&|and)?\s*currency)/i;
 
 function isStrongPositiveDescription(description) {
   // "cr edit" catches BofA credit card PDFs where the word "CREDIT" is split
@@ -1621,6 +1669,13 @@ function recordControlLine(text, lower, docState) {
         docState.balances[key] = value;
       }
     }
+    return;
+  }
+
+  // Totals printed inside a rollup block ("Total Card Deposits & Credits"
+  // under "ATM & Debit Card Summary") re-slice money already counted in
+  // the real sections.  They validate nothing and own no rows.
+  if (docState.inSummaryBlock) {
     return;
   }
 
