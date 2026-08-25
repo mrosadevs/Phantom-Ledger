@@ -389,7 +389,11 @@ function parsePageTransactions(lines, context) {
       // A section heading is a short title line with no amounts and no date.
       // Requiring that keeps Account Summary lines (which carry amounts) and
       // transaction prose from re-arming or flipping the section sign.
-      if (text.length <= 70 && !hasAmount && !dateToken) {
+      // A real section heading opens with a word.  Marketing bullets do not —
+      // BofA prints "$500+ in new net purchases on a linked Business debit
+      // card", which carries "debit" and would otherwise become a section and
+      // steal the Service fees rows.
+      if (text.length <= 70 && !hasAmount && !dateToken && /^[A-Za-z]/.test(text)) {
         if (isSummaryBlockHeading(text)) {
           // A rollup block ("ATM & Debit Card Summary") owns no rows — it
           // restates amounts already listed in the real sections, sliced a
@@ -458,8 +462,19 @@ function parseTransactionLine(line, dateToken, headerHints, context, docState) {
     .trim();
 
   description = normalizeSpaces(description);
+  // Bank of America leaves the description column blank on some rows — the PDF
+  // holds a date and an amount and nothing else.  Returning null here dropped
+  // real money and broke both the section total and the balance chain, so keep
+  // the row and flag it for a human instead.
+  let missingDescription = false;
   if (!description) {
-    return null;
+    if (!amountResult.explicitSign) {
+      // No description and no sign: this is a daily-balance table row, not a
+      // transaction.  Chase, First Horizon and BofA all print one.
+      return null;
+    }
+    description = MISSING_DESCRIPTION_LABEL;
+    missingDescription = true;
   }
 
   const section = docState.currentSection;
@@ -472,10 +487,17 @@ function parseTransactionLine(line, dateToken, headerHints, context, docState) {
 
   description = sanitizeTransactionDescription(description, finalAmount);
   if (!description) {
-    return null;
+    if (!amountResult.explicitSign) {
+      return null;
+    }
+    description = MISSING_DESCRIPTION_LABEL;
+    missingDescription = true;
   }
 
   const flags = [...signResult.flags];
+  if (missingDescription) {
+    flags.push("missing-description");
+  }
   if (almostZero(finalAmount)) {
     flags.push("zero-value");
   }
@@ -491,6 +513,9 @@ function parseTransactionLine(line, dateToken, headerHints, context, docState) {
     flags
   };
 }
+
+// Placeholder for rows the statement itself leaves blank — see pushPendingRow.
+const MISSING_DESCRIPTION_LABEL = "No description on statement";
 
 function pushPendingRow(rows, row) {
   if (!row) {
@@ -898,7 +923,14 @@ function isHeaderLine(lowerText) {
 // letting it register as a section leaves an empty bucket that its own printed
 // totals then fail against.
 function isSummaryBlockHeading(text) {
-  return /(?:summary|totals)$/.test(compactLetters(text));
+  if (/(?:summary|totals)$/.test(compactLetters(text))) {
+    return true;
+  }
+  // BofA heads its overdraft box with "Total for this period  Total
+  // year-to-date".  The totals under it are running annual figures that no
+  // section sum can ever match, and the period column is a subset of Service
+  // fees rather than a total of it.
+  return /for this period/i.test(text) && /year[\s-]?to[\s-]?date/i.test(text);
 }
 
 // Chase embeds machine-readable artifacts in the text layer that render
