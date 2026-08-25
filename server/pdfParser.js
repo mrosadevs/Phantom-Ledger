@@ -1650,43 +1650,115 @@ function collectBusinessNameCandidates(lines) {
   return sortCandidateCounts(counts);
 }
 
-function detectStatementPeriod(lines) {
-  const periodPatterns = [
-    /\bstatement\s+period\s*[:\-]?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*(?:to|-|through|thru)\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i,
-    /\bfrom\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*(?:to|-|through|thru)\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/i,
-    // BofA style: "for November 1, 2025 to November 30, 2025"
-    /\b([A-Z][a-z]+\s+\d{1,2},\s+\d{4})\s+(?:to|through|thru)\s+([A-Z][a-z]+\s+\d{1,2},\s+\d{4})/,
-    // AMEX style: "Closing Date 01/03/26" (single date — period end only)
-    /\bclosing\s+date\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})()/i
-  ];
+const DATE_RE = "\\d{1,2}[/-]\\d{1,2}[/-]\\d{2,4}";
+const WORD_DATE_RE = "[A-Z][a-z]+\\s+\\d{1,2},\\s+\\d{4}";
 
+// A full "start to end" range, in the wordings the statements actually use.
+const PERIOD_RANGE_PATTERNS = [
+  new RegExp("\\bstatement\\s+period\\s*[:\\-]?\\s*(" + DATE_RE + ")\\s*(?:to|-|through|thru)\\s*(" + DATE_RE + ")", "i"),
+  new RegExp("\\bfrom\\s+(" + DATE_RE + ")\\s*(?:to|-|through|thru)\\s*(" + DATE_RE + ")", "i"),
+  // BofA: "for November 1, 2025 to November 30, 2025"
+  new RegExp("\\b(" + WORD_DATE_RE + ")\\s+(?:to|through|thru)\\s+(" + WORD_DATE_RE + ")"),
+  // Wells Fargo: "Fee period 07/01/2025 - 07/31/2025"
+  new RegExp("\\bfee\\s+period\\s+(" + DATE_RE + ")\\s*(?:to|-|through|thru)\\s*(" + DATE_RE + ")", "i"),
+  // Navy Federal prints "Statement Period" and the range on the NEXT line, so
+  // the range also has to be recognised standing on its own.
+  new RegExp("^\\s*(" + DATE_RE + ")\\s*[-–]\\s*(" + DATE_RE + ")\\s*$")
+];
+
+// Truist ("Your previous balance as of 05/30/2025") and Wintrust ("Beginning
+// Balance as of 04/01/24") date their balance lines, which bounds the period
+// exactly without naming it.
+const BALANCE_AS_OF_PATTERNS = [
+  { pattern: new RegExp("^(?:your\\s+)?(?:beginning|previous|opening|starting)\\s+balance\\s+as\\s+of\\s+(" + DATE_RE + ")", "i"), key: "start" },
+  { pattern: new RegExp("^(?:your\\s+)?(?:ending|new|closing)\\s+balance\\s+as\\s+of\\s+(" + DATE_RE + ")", "i"), key: "end" }
+];
+
+// Last resort: only the closing date is printed.  Still enough to spot a
+// duplicated month or a gap in the sequence.
+const PERIOD_END_PATTERNS = [
+  new RegExp("\\bclosing\\s+date\\s+(" + DATE_RE + ")", "i"),
+  new RegExp("\\bthrough\\s+(" + DATE_RE + ")\\s*$", "i"),
+  // Spanish Wells Fargo dates the statement "31 de March de 2024".
+  new RegExp("^\\s*(\\d{1,2})\\s+de\\s+([A-Za-z]+)\\s+de\\s+(\\d{4})\\s*$")
+];
+
+// Spanish Wells Fargo dates January and February as "31 de enero de 2024" and
+// "29 de febrero de 2024", then switches to English from March ("31 de March
+// de 2024") — the bank's own inconsistency, so both spellings must resolve.
+const SPANISH_MONTHS = {
+  enero: "January",
+  febrero: "February",
+  marzo: "March",
+  abril: "April",
+  mayo: "May",
+  junio: "June",
+  julio: "July",
+  agosto: "August",
+  septiembre: "September",
+  setiembre: "September",
+  octubre: "October",
+  noviembre: "November",
+  diciembre: "December"
+};
+
+function translateMonthName(name) {
+  const key = String(name || "").toLowerCase();
+  return SPANISH_MONTHS[key] || name;
+}
+
+function detectStatementPeriod(lines) {
   for (const line of lines) {
-    for (const pattern of periodPatterns) {
+    for (const pattern of PERIOD_RANGE_PATTERNS) {
       const match = line.match(pattern);
       if (!match) {
         continue;
       }
-
       const start = normalizeDate(match[1]);
       const end = normalizeDate(match[2]);
       if (start && end) {
-        return {
-          start: start.normalized,
-          end: end.normalized
-        };
-      }
-      // Single-date patterns (e.g. AMEX "Closing Date 01/03/26") only give
-      // the period end — still useful for duplicate/gap detection.
-      if (start && !match[2]) {
-        return {
-          start: null,
-          end: start.normalized
-        };
+        return { start: start.normalized, end: end.normalized };
       }
     }
   }
 
-  return null;
+  const asOf = { start: null, end: null };
+  for (const line of lines) {
+    for (const entry of BALANCE_AS_OF_PATTERNS) {
+      if (asOf[entry.key]) {
+        continue;
+      }
+      const match = line.match(entry.pattern);
+      if (!match) {
+        continue;
+      }
+      const parsed = normalizeDate(match[1]);
+      if (parsed) {
+        asOf[entry.key] = parsed.normalized;
+      }
+    }
+  }
+  if (asOf.start && asOf.end) {
+    return asOf;
+  }
+
+  for (const line of lines) {
+    for (const pattern of PERIOD_END_PATTERNS) {
+      const match = line.match(pattern);
+      if (!match) {
+        continue;
+      }
+      const raw = match.length > 3
+        ? translateMonthName(match[2]) + " " + match[1] + ", " + match[3]
+        : match[1];
+      const end = normalizeDate(raw);
+      if (end) {
+        return { start: asOf.start, end: end.normalized };
+      }
+    }
+  }
+
+  return asOf.end ? { start: asOf.start, end: asOf.end } : null;
 }
 
 function addCandidate(map, candidate) {
