@@ -282,6 +282,25 @@ function parsePageTransactions(lines, context) {
       continue;
     }
 
+    if (isCheckImagesHeading(text)) {
+      docState.inCheckImages = true;
+      capture = false;
+      if (pending) {
+        pushPendingRow(rows, pending);
+        pending = null;
+      }
+      continue;
+    }
+
+    // Nothing on a check-image page is a transaction; only a real column
+    // header means the statement has resumed listing activity.
+    if (docState.inCheckImages) {
+      if (!isHeaderLine(lower)) {
+        continue;
+      }
+      docState.inCheckImages = false;
+    }
+
     // Printed control totals ("Total deposits and other credits $…") and
     // beginning/ending balances feed the validation gate.  They can appear on
     // footer lines or standalone (e.g. AMEX "Total New Charges"), so check
@@ -325,6 +344,18 @@ function parsePageTransactions(lines, context) {
       capture = true;
       docState.inCreditCardSection = true;
       docState.inChecksSection = false;
+      if (pending) {
+        pushPendingRow(rows, pending);
+        pending = null;
+      }
+      continue;
+    }
+
+    // Wintrust's checks index restates checks that Debits already lists.
+    if (isCheckIndexHeader(text) && (docState.inChecksSection || isChecksSection(docState))) {
+      capture = false;
+      docState.inChecksSection = false;
+      docState.inSummaryBlock = true;
       if (pending) {
         pushPendingRow(rows, pending);
         pending = null;
@@ -430,6 +461,7 @@ function createDocState(accountType = "bank") {
     inChecksSection: false,
     sectionsSeen: new Set(),
     inSummaryBlock: false,
+    inCheckImages: false,
     printedTotals: [],
     balances: { beginning: null, ending: null }
   };
@@ -922,6 +954,33 @@ function isHeaderLine(lowerText) {
 // Additions and ATM & Debit Card Withdrawals.  Such a block owns no rows, so
 // letting it register as a section leaves an empty bucket that its own printed
 // totals then fail against.
+// Wintrust opens its Checks block with "Date Check# Amount" repeated across
+// two or three column groups, then lists every check a second time inside
+// Debits as "CHECK 108".  The block is an index, not a ledger: counting it
+// double-charges each check, and because parseChecksLine only understands
+// BofA's MM/DD/YY entries the Wintrust rows fell through to the generic
+// parser, which takes the first date and the LAST amount on the line and
+// invents a transaction that matches neither.  Skip the block; the Debits
+// rows are authoritative.  (BofA prints no such header, and its checks are
+// the only record of themselves, so they keep flowing through as before.)
+// Wintrust closes the statement with scanned "Check Images for Account
+// XXXXXX1263" pages that caption each image "06/10/2024 # 112 $600.00" — a
+// third listing of checks already recorded in Debits.  The grid puts two
+// captions on most lines (two dates, so the no-header fallback ignores them)
+// but the odd one out has a single date and slipped through as a positive
+// row that cancelled the real check exactly.
+function isCheckImagesHeading(text) {
+  return /^check images\b/i.test(text);
+}
+
+function isChecksSection(docState) {
+  return Boolean(docState.currentSection && docState.currentSection.compact === "checks");
+}
+
+function isCheckIndexHeader(text) {
+  return /date\s+check\s*#\s*amount/i.test(text);
+}
+
 function isSummaryBlockHeading(text) {
   if (/(?:summary|totals)$/.test(compactLetters(text))) {
     return true;
