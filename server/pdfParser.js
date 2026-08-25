@@ -500,7 +500,8 @@ function createDocState(accountType = "bank") {
     inSummaryBlock: false,
     inCheckImages: false,
     printedTotals: [],
-    balances: { beginning: null, ending: null }
+    balances: { beginning: null, ending: null },
+    datedBalances: { beginning: 0, ending: 0, seen: false }
   };
 }
 
@@ -1819,19 +1820,71 @@ function detectAccountType(lines) {
 const TOTAL_LABEL_RELEVANT = /(deposit|withdrawal|check|fee|charge|credit|payment|interest|advance|debit)/i;
 const TOTAL_LABEL_IGNORED = /(\b(?:in|for)\s+20\d{2}\b|year[\s-]?to[\s-]?date|\bytd\b)/i;
 
+// How each statement names the two ends of its balance chain.  Truist writes
+// "Your previous balance as of 05/30/2025", Spanish Wells Fargo writes "Saldo
+// inicial al 3/1" — neither matched, so neither bank could be validated at
+// all.  Daily-balance tables ("daily ending balance", "saldo diario final")
+// are excluded: they repeat one figure per day and are not the chain.
+const BALANCE_LABEL_PATTERNS = [
+  { pattern: /^(?:your\s+)?(?:beginning|previous|opening|starting)\s+balance\b/, key: "beginning" },
+  { pattern: /^(?:your\s+)?(?:ending|new|closing)\s+balance\b/, key: "ending" },
+  { pattern: /^saldo\s+(?:inicial|anterior)\b/, key: "beginning" },
+  { pattern: /^saldo\s+(?:final|nuevo)\b/, key: "ending" }
+];
+
+function matchBalanceLabel(lower) {
+  if (/daily|diario/.test(lower)) {
+    return null;
+  }
+  for (const entry of BALANCE_LABEL_PATTERNS) {
+    if (entry.pattern.test(lower)) {
+      return entry.key;
+    }
+  }
+  return null;
+}
+
+// Navy Federal issues one statement covering several accounts, each opening
+// with a dated "08-01 Beginning Balance" row and closing with "08-31 Ending
+// Balance".  No single chain describes two accounts, but their opening and
+// closing figures sum to one that does — and the statement's own Totals row
+// agrees to the cent.  Dated balance rows were discarded outright before, so
+// accumulating them cannot disturb a bank that prints its balances undated.
+function recordDatedBalance(text, docState) {
+  const withoutDate = normalizeSpaces(text.replace(/^\S+\s+/, ""));
+  const key = matchBalanceLabel(withoutDate.toLowerCase());
+  if (!key) {
+    return;
+  }
+  const tokens = getAmountTokens(withoutDate);
+  if (!tokens.length) {
+    return;
+  }
+  const value = parseAmountToken(tokens[0]);
+  if (!Number.isFinite(value)) {
+    return;
+  }
+  docState.datedBalances[key] += value;
+  docState.datedBalances.seen = true;
+}
+
 function recordControlLine(text, lower, docState) {
-  if (!docState || extractLeadingDate(text)) {
+  if (!docState) {
     return;
   }
 
-  const balanceMatch = lower.match(/^(beginning|ending|previous|new) balance\b/);
-  if (balanceMatch && !/daily/.test(lower)) {
+  if (extractLeadingDate(text)) {
+    recordDatedBalance(text, docState);
+    return;
+  }
+
+  const balanceKey = matchBalanceLabel(lower);
+  if (balanceKey) {
     const tokens = getAmountTokens(text);
     if (tokens.length) {
-      const key = balanceMatch[1] === "beginning" || balanceMatch[1] === "previous" ? "beginning" : "ending";
       const value = parseAmountToken(tokens[0]);
-      if (docState.balances[key] === null && Number.isFinite(value)) {
-        docState.balances[key] = value;
+      if (docState.balances[balanceKey] === null && Number.isFinite(value)) {
+        docState.balances[balanceKey] = value;
       }
     }
     return;
@@ -1926,7 +1979,13 @@ function buildValidation(rows, docState, fileName) {
   }
 
   let balanceCheck = null;
-  const { beginning, ending } = docState.balances;
+  let { beginning, ending } = docState.balances;
+  // Fall back to the per-account rows only when the statement printed no
+  // summary balances of its own.
+  if (!Number.isFinite(beginning) && !Number.isFinite(ending) && docState.datedBalances.seen) {
+    beginning = docState.datedBalances.beginning;
+    ending = docState.datedBalances.ending;
+  }
   if (Number.isFinite(beginning) && Number.isFinite(ending)) {
     const net = (rows || []).reduce((sum, row) => sum + (Number.isFinite(row.amount) ? row.amount : 0), 0);
     const expectedNet = ending - beginning;
