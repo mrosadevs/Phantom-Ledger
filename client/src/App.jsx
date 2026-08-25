@@ -15,16 +15,17 @@ const UPDATE_STORAGE_KEY = "phantom-ledger-last-update-id";
 const THEME_STORAGE_KEY = "phantom-ledger-theme";
 
 const UPDATE_CARD = {
-  id: "2026-08-20-validation-gate",
+  id: "2026-08-25-every-bank",
   label: "New",
-  date: "August 20, 2026",
-  title: "Validation gate, sign fixes, duplicate detection",
+  date: "August 25, 2026",
+  title: "Eight banks now tie to the cent",
   items: [
-    "New: Every statement is now verified against its own printed totals and balance chain — each file gets a pass/fail check, and a Validation sheet is included in the Excel export. A silently wrong export can no longer look like a correct one.",
-    "Fixed: Transaction signs now come from statement structure (section headings and explicit minus signs), never from description keywords. Payees like \"BARCLAYCARD\" or memos like \"Deposit\" no longer flip withdrawals into deposits.",
-    "New: Bank vs. credit card sign conventions are handled explicitly — a Late Payment Fee on a card is a charge (positive), and you can override auto-detection per batch.",
-    "New: Duplicate uploads (byte-identical PDFs), repeated statement periods, and gaps in the month sequence are detected and reported.",
-    "Improved: $0.00 rows (fee waivers) are kept and flagged instead of silently dropped, so row counts tie during reconciliation.",
+    "Fixed: Bank of America statements were silently dropping transactions. Some BofA rows carry a date and an amount and no description at all, and those were discarded — the same $985.86 vanished from six consecutive months. Every recovered row is kept and flagged for review.",
+    "Fixed: Wintrust was counting each check twice. Wintrust lists checks three times — a summary index, the Debits section, and scanned check images — and two of those were being banked. April was overstated by $5,750.",
+    "New: Truist statements can be read at all. Truist writes its PDFs one letter at a time, so section headings arrived as \"O t h e r  w i t h d r a w a l s\" and every row had to guess its sign from the description. 2,597 transactions now take their sign from the statement's own structure.",
+    "New: Spanish-language Wells Fargo and multi-account Navy Federal statements are validated. Both were extracting correctly but had no way to prove it, so every file reported \"not validated\".",
+    "Fixed: Chase no longer reports months as missing when they are present. Any statement starting on the 1st through the 9th lost its period entirely, which made the gap detector invent missing months.",
+    "Improved: Statement periods are now read from every bank's wording — a printed range, the dates on the balance lines, or the closing date alone. 48 files that reported no period now report one.",
   ],
 };
 
