@@ -222,6 +222,14 @@ function joinLineChunks(chunks) {
   // pdfjs groups onto the same line as transaction text.
   const filteredChunks = chunks.filter((chunk) => !/^[A-Z]{18,}$/.test(chunk.str));
 
+  // Truist emits one text item per glyph, so the chunk-per-word assumption
+  // below renders "Other withdrawals" as "O t h e r  w i t h d r a w a l s" —
+  // no section heading, control total or balance label is then recognisable.
+  // Such a line has to be rebuilt from geometry instead.
+  if (isGlyphSpacedLine(filteredChunks)) {
+    return joinGlyphChunks(filteredChunks);
+  }
+
   let output = "";
   let previousRightEdge = null;
 
@@ -240,6 +248,35 @@ function joinLineChunks(chunks) {
 
     output += chunk.str;
     previousRightEdge = chunk.x + Math.max(chunk.width, chunk.str.length * 2.4);
+  }
+
+  return normalizeSpaces(output);
+}
+
+// A line pdfjs returned glyph by glyph rather than word by word.
+function isGlyphSpacedLine(chunks) {
+  if (chunks.length < 8) {
+    return false;
+  }
+  const singles = chunks.filter((chunk) => String(chunk.str).length === 1).length;
+  return singles / chunks.length >= 0.6;
+}
+
+// Inside a word the next glyph starts where the previous one ended (measured
+// gaps run -0.16 to +0.08pt); a real space opens about 2pt.  1.2pt sits in the
+// middle of that gulf with room to spare on both sides.
+const GLYPH_SPACE_GAP = 1.2;
+
+function joinGlyphChunks(chunks) {
+  let output = "";
+  let previousRightEdge = null;
+
+  for (const chunk of chunks) {
+    if (previousRightEdge !== null && chunk.x - previousRightEdge > GLYPH_SPACE_GAP) {
+      output += " ";
+    }
+    output += chunk.str;
+    previousRightEdge = chunk.x + (Number(chunk.width) || 0);
   }
 
   return normalizeSpaces(output);
@@ -858,6 +895,29 @@ function lineHasAmountToken(line) {
   return AMOUNT_SEARCH_REGEX.test(line.text);
 }
 
+// Section names the statement formats use verbatim.  Anchored, so a
+// description that merely mentions "service charges" mid-sentence is
+// unaffected — only a line that opens with the section's own name counts.
+const NAMED_SECTION_HEADING = new RegExp(
+  "^(?:atm\s*&\s*debit\s*card\s*withdrawals"
+  + "|electronic withdrawals"
+  + "|other withdrawals, debits and service charges"
+  + "|withdrawals and other debits"
+  + "|deposits and additions"
+  + "|deposits, credits and interest"
+  + "|deposits and credits"
+  + "|deposits and other credits"
+  + "|purchases and other charges"
+  + "|payments and other credits"
+  + "|cash advances"
+  + "|service fees)\s*$",
+  "i"
+);
+
+function isNamedSectionHeading(text) {
+  return NAMED_SECTION_HEADING.test(normalizeSpaces(text));
+}
+
 function shouldAppendDescription(line, capture, headerHints) {
   if (!capture) {
     return false;
@@ -873,6 +933,15 @@ function shouldAppendDescription(line, capture, headerHints) {
   }
 
   if (isHeaderLine(text.toLowerCase()) || isFooterLine(text.toLowerCase())) {
+    return false;
+  }
+
+  // A section heading is never a continuation of the previous row.  Truist
+  // prints "Deposits, credits and interest" flush left directly after the
+  // withdrawals total, and swallowing it into the last wire's description
+  // left all 452 rows in the withdrawals section, every deposit forced
+  // negative and both printed totals compared against the same sum.
+  if (isNamedSectionHeading(text)) {
     return false;
   }
 
@@ -1179,11 +1248,16 @@ function getAmountTokens(text) {
 }
 
 function tokenHasExplicitSign(rawToken) {
-  const token = String(rawToken || "");
+  const token = String(rawToken || "").trim();
   return /\b(?:CR|DR)\b/i.test(token)
     || token.includes("(")
     || token.includes(")")
-    || /^\s*-/.test(token);
+    // A minus is a sign only when it is attached to its number.  Truist ends
+    // some descriptions with a hyphen — "TRUIST ONLINE TRANSFER MOBILE FROM
+    // ****1072 -" is one text chunk and "100.00" is another — and reading that
+    // as a negative flipped a deposit, throwing the section $200 out on a $100
+    // row.  BofA's "-985.86" and Wintrust's "-$600.00" stay signed.
+    || /^-\$?[\d,]/.test(token);
 }
 
 function parseDateWithoutYear(rawDate, dateContext) {
